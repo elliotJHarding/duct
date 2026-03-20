@@ -9,7 +9,6 @@ import yaml
 
 from duct.config import (
     SyncIntervals,
-    TrustConfig,
     WorkspaceConfig,
     find_workspace_root,
     gh_token,
@@ -33,16 +32,6 @@ def test_load_config_with_valid_yaml(tmp_workspace: Path) -> None:
             "jql": "project = ACME",
         },
         "repoPaths": ["/tmp/repos"],
-        "trust": {
-            "writeArtifact": "auto",
-            "gitCommit": "deny",
-            "gitPush": "deny",
-            "jiraComment": "auto",
-            "jiraTransition": "propose",
-            "prCreate": "propose",
-            "prMerge": "deny",
-            "timeLog": "auto",
-        },
         "syncIntervals": {
             "jira": 600,
             "github": 600,
@@ -59,8 +48,6 @@ def test_load_config_with_valid_yaml(tmp_workspace: Path) -> None:
     assert cfg.jira_domain == "acme.atlassian.net"
     assert cfg.jira_jql == "project = ACME"
     assert cfg.repo_paths == [Path("/tmp/repos")]
-    assert cfg.trust.git_commit == "deny"
-    assert cfg.trust.jira_comment == "auto"
     assert cfg.sync_intervals.jira == 600
     assert cfg.sync_intervals.sessions == 60
 
@@ -71,8 +58,25 @@ def test_load_config_missing_file_returns_defaults(tmp_workspace: Path) -> None:
     assert cfg.root == tmp_workspace
     assert cfg.jira_domain == ""
     assert "assignee = currentUser()" in cfg.jira_jql
-    assert cfg.trust == TrustConfig()
     assert cfg.sync_intervals == SyncIntervals()
+
+
+def test_load_config_ignores_legacy_trust_section(tmp_workspace: Path) -> None:
+    """A config.yaml with a trust: section from an older version loads without error."""
+    config_data = {
+        "workspace": {"root": str(tmp_workspace)},
+        "jira": {"domain": "acme.atlassian.net"},
+        "trust": {
+            "writeArtifact": "auto",
+            "gitCommit": "deny",
+        },
+    }
+    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+
+    cfg = load_config(tmp_workspace)
+
+    assert cfg.jira_domain == "acme.atlassian.net"
+    assert not hasattr(cfg, "trust")
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +90,6 @@ def test_save_and_load_round_trip(tmp_workspace: Path) -> None:
         jira_jql="project = TEST",
         jira_domain="test.atlassian.net",
         repo_paths=[Path("/a"), Path("/b")],
-        trust=TrustConfig(git_commit="auto", pr_merge="propose"),
         sync_intervals=SyncIntervals(jira=100, workspace=200),
     )
 
@@ -97,10 +100,16 @@ def test_save_and_load_round_trip(tmp_workspace: Path) -> None:
     assert loaded.jira_domain == original.jira_domain
     assert loaded.jira_jql == original.jira_jql
     assert loaded.repo_paths == original.repo_paths
-    assert loaded.trust.git_commit == "auto"
-    assert loaded.trust.pr_merge == "propose"
     assert loaded.sync_intervals.jira == 100
     assert loaded.sync_intervals.workspace == 200
+
+
+def test_save_config_omits_trust(tmp_workspace: Path) -> None:
+    cfg = WorkspaceConfig(root=tmp_workspace)
+    save_config(cfg, tmp_workspace)
+
+    raw = yaml.safe_load((tmp_workspace / "config.yaml").read_text())
+    assert "trust" not in raw
 
 
 # ---------------------------------------------------------------------------

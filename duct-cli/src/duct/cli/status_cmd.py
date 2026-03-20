@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from duct.cli.output import Col, error, output, section, table
+from duct.cli.output import Col, error, output, table
 from duct.cli.resolve import resolve_root
 from duct.config import ConfigError
 from duct.markdown import extract_table, parse_frontmatter
@@ -139,21 +139,6 @@ def _sync_age(ticket_dir: Path) -> str:
         return "?"
 
 
-def _read_proposed_actions(ticket_dir: Path) -> list[str]:
-    """Extract proposal summaries from PROPOSED_ACTIONS.md.
-
-    Returns the text of each ``## `` heading as a one-line summary.
-    """
-    pa_md = ticket_dir / "orchestrator" / "PROPOSED_ACTIONS.md"
-    if not pa_md.exists():
-        return []
-    proposals: list[str] = []
-    for line in pa_md.read_text(encoding="utf-8").splitlines():
-        if line.startswith("## "):
-            proposals.append(line[3:].strip())
-    return proposals
-
-
 _TERMINAL_STATUSES = {"closed", "done"}
 _FOCUS_STATUSES = {"in progress", "analysis started"}
 
@@ -197,7 +182,6 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
         sessions = _count_active_sessions(path)
         dirty = _check_dirty_repos(path)
         age = _sync_age(path)
-        proposals = _read_proposed_actions(path)
 
         pri_pos = priority_map.get(key)
         pri_str = f"#{pri_pos + 1}" if pri_pos is not None else ""
@@ -214,7 +198,6 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
             "sessions": sessions,
             "dirty_repos": dirty,
             "sync_age": age,
-            "proposed_actions": proposals,
             "path": str(path),
         })
 
@@ -298,16 +281,3 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
         ])
 
     table("duct Status", columns, rows, data=entries)
-
-    # Show proposed actions below the table
-    proposals_by_key = [
-        (e["key"], e["proposed_actions"])
-        for e in entries
-        if e["proposed_actions"]
-    ]
-    if proposals_by_key:
-        output("")
-        section("Proposed Actions")
-        for key, proposals in proposals_by_key:
-            for proposal in proposals:
-                output(f"  {key}: {proposal}")

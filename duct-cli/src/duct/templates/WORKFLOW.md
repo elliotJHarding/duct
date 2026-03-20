@@ -36,6 +36,7 @@ A ticket is done when all relevant concerns are addressed. Not every concern app
 ## Attention and Priority
 
 - Read PRIORITY.md first. It tells you where to focus.
+- Each entry must be a markdown list item (`- `) containing a ticket key. You may add sections, notes, and formatting around entries.
 - Urgent signals override stated priorities: failing CI, unaddressed review feedback, sessions waiting for input.
 - You can update PRIORITY.md if signals warrant it (e.g., a CI failure bumps a ticket up).
 - Spread attention across the portfolio — don't tunnel-vision on one ticket while others stall.
@@ -86,23 +87,23 @@ When assessing implementation, note the concrete state you observed — not just
 
 ## Action Types
 
-The orchestrator's prompt includes trust levels for each action type (auto, propose, or deny). These levels control *whether* you can act. This section defines *what* each action is, when it's appropriate, and what to include when proposing it.
+This section defines what actions the orchestrator can take, when each is appropriate, and what context to provide.
 
-### Artifact actions (low risk)
+### Artifact actions
 
 - **Write artifact** — Create or update an authored file (BACKGROUND.md, AC.md, SPEC.md, etc.) in the ticket's orchestrator/ directory. When to use: whenever a concern is unmet and you can address it by writing. This is your primary output.
 
-### Git actions (medium risk)
+### Git actions
 
 - **Git commit** — Commit staged changes in a ticket's worktree. When to use: after writing implementation code, fixing a bug, or addressing review feedback. Include: the commit message you'd use and which files are being committed.
 - **Git push** — Push a branch to the remote. When to use: after committing, when the branch is ready for others to see (typically before PR creation or after addressing review feedback). Include: the branch name and remote.
 
-### GitHub actions (medium-high risk)
+### GitHub actions
 
 - **PR creation** — Create a pull request from the ticket's branch. When to use: implementation is complete, tests pass, the work is ready for review. Include: target branch, PR title, description draft, and which reviewers to request.
 - **PR merge** — Merge an approved pull request. When to use: PR is approved, CI is passing, no outstanding feedback. Include: the PR URL and merge method.
 
-### Jira actions (high risk)
+### Jira actions
 
 - **Jira comment** — Post a comment on the Jira ticket. When to use: to communicate progress, flag blockers, or summarise completed work. Include: the comment text. Keep it concise and useful to humans reading the ticket.
 - **Jira transition** — Move the ticket to a different status. When to use: when the ticket's actual state clearly matches a different Jira status (e.g., work is complete, PR is merged → transition to Done). Include: the target status and evidence supporting the transition.
@@ -114,18 +115,6 @@ The orchestrator's prompt includes trust levels for each action type (auto, prop
 ### Launching sessions
 
 - **Launch Claude session** — Start a new Claude Code session to work on a specific task for a ticket. When to use: when implementation needs to start or continue, review feedback needs addressing, or a specific technical task needs doing. Include: the working directory, a specific prompt that references the relevant artifacts (AC.md, review comments, etc.), and what the session should accomplish.
-
-## Proposing Actions
-
-When your trust level for an action is "propose":
-- Write the proposal to PROPOSED_ACTIONS.md in the ticket's orchestrator/ directory
-- Structure each proposal with: the action type, what specifically you're proposing, why (citing evidence from sync snapshots or artifact state), and any context the developer needs to approve or reject it
-- One proposal per action — don't bundle unrelated actions
-- Do not re-propose an action the developer has already rejected unless circumstances have materially changed (and explain what changed)
-
-When your trust level is "auto", execute the action directly. When it's "deny", do not attempt or propose it.
-
-Be conservative with external actions. When uncertain, write observations to ORCHESTRATOR.md instead of proposing.
 
 ## Working Notes
 

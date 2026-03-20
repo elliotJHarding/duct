@@ -5,28 +5,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from duct.exceptions import AuthError, ConfigError
 
-TrustLevel = Literal["auto", "propose", "deny"]
-
 _DEFAULT_JQL = "assignee = currentUser() AND status != Done ORDER BY updated DESC"
 _CONFIG_FILENAME = "config.yaml"
-
-
-@dataclass(frozen=True)
-class TrustConfig:
-    """Per-action trust levels controlling what duct may do autonomously."""
-
-    write_artifact: TrustLevel = "auto"
-    git_commit: TrustLevel = "propose"
-    git_push: TrustLevel = "propose"
-    jira_comment: TrustLevel = "propose"
-    jira_transition: TrustLevel = "deny"
-    pr_create: TrustLevel = "propose"
-    pr_merge: TrustLevel = "deny"
-    time_log: TrustLevel = "propose"
 
 
 @dataclass(frozen=True)
@@ -78,7 +62,6 @@ class WorkspaceConfig:
     repo_paths: list[Path] = field(
         default_factory=lambda: [Path.home() / "workspace", Path.home() / "projects"]
     )
-    trust: TrustConfig = field(default_factory=TrustConfig)
     sync_intervals: SyncIntervals = field(default_factory=SyncIntervals)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
 
@@ -86,35 +69,6 @@ class WorkspaceConfig:
 # ---------------------------------------------------------------------------
 # YAML camelCase <-> Python snake_case mapping
 # ---------------------------------------------------------------------------
-
-_TRUST_YAML_TO_PY = {
-    "writeArtifact": "write_artifact",
-    "gitCommit": "git_commit",
-    "gitPush": "git_push",
-    "jiraComment": "jira_comment",
-    "jiraTransition": "jira_transition",
-    "prCreate": "pr_create",
-    "prMerge": "pr_merge",
-    "timeLog": "time_log",
-}
-_TRUST_PY_TO_YAML = {v: k for k, v in _TRUST_YAML_TO_PY.items()}
-
-
-def _parse_trust(raw: dict[str, Any]) -> TrustConfig:
-    kwargs: dict[str, Any] = {}
-    for yaml_key, py_key in _TRUST_YAML_TO_PY.items():
-        if yaml_key in raw:
-            kwargs[py_key] = raw[yaml_key]
-    return TrustConfig(**kwargs)
-
-
-def _trust_to_dict(trust: TrustConfig) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for f in fields(trust):
-        yaml_key = _TRUST_PY_TO_YAML[f.name]
-        result[yaml_key] = getattr(trust, f.name)
-    return result
-
 
 _SANDBOX_YAML_TO_PY = {
     "autoAllowBashIfSandboxed": "auto_allow_bash",
@@ -193,7 +147,6 @@ def load_config(root: Path) -> WorkspaceConfig:
     else:
         repo_paths = WorkspaceConfig().repo_paths
 
-    trust = _parse_trust(raw.get("trust", {}))
     sync_intervals = _parse_sync_intervals(raw.get("syncIntervals", {}))
     sandbox = _parse_sandbox(raw.get("sandbox", {}))
 
@@ -202,7 +155,6 @@ def load_config(root: Path) -> WorkspaceConfig:
         jira_jql=jira_section.get("jql", _DEFAULT_JQL),
         jira_domain=jira_section.get("domain", ""),
         repo_paths=repo_paths,
-        trust=trust,
         sync_intervals=sync_intervals,
         sandbox=sandbox,
     )
@@ -222,7 +174,6 @@ def save_config(config: WorkspaceConfig, root: Path) -> None:
             "jql": config.jira_jql,
         },
         "repoPaths": [str(p) for p in config.repo_paths],
-        "trust": _trust_to_dict(config.trust),
         "syncIntervals": _sync_intervals_to_dict(config.sync_intervals),
         "sandbox": _sandbox_to_dict(config.sandbox),
     }

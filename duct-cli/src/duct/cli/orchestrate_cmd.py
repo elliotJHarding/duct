@@ -12,94 +12,16 @@ import click
 
 from duct.cli.output import error, output, spinner, success
 from duct.cli.resolve import complete_ticket_key, resolve_root
-from duct.config import ConfigError, TrustConfig, load_config
+from duct.config import ConfigError, load_config
+from duct.prompts import load_prompt
+
+_ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash"]
 
 
-def _build_allowed_tools(trust: TrustConfig) -> list[str]:
-    """Derive the --allowedTools list from the trust configuration."""
-    # Base tools: always available (read-only filesystem access + writing artifacts).
-    tools = ["Read", "Glob", "Grep", "Write", "Edit"]
-
-    # If any action that requires shell access is auto or propose, add Bash.
-    shell_actions = [
-        trust.git_commit,
-        trust.git_push,
-        trust.pr_create,
-        trust.pr_merge,
-    ]
-    if any(level in ("auto", "propose") for level in shell_actions):
-        tools.append("Bash")
-
-    return tools
-
-
-def _trust_instructions(trust: TrustConfig) -> str:
-    """Generate trust-level instructions for the orchestrator prompt."""
-    lines: list[str] = []
-    lines.append("## Trust Levels")
-    lines.append("")
-    lines.append("Your autonomy is governed by these trust settings:")
-    lines.append("")
-
-    actions = [
-        ("Write artifacts", trust.write_artifact),
-        ("Git commit", trust.git_commit),
-        ("Git push", trust.git_push),
-        ("Jira comments", trust.jira_comment),
-        ("Jira transitions", trust.jira_transition),
-        ("PR creation", trust.pr_create),
-        ("PR merge", trust.pr_merge),
-        ("Time logging", trust.time_log),
-    ]
-
-    for label, level in actions:
-        if level == "auto":
-            lines.append(f"- {label}: you may execute freely")
-        elif level == "propose":
-            lines.append(f"- {label}: propose the action and explain why, but do not execute")
-        else:
-            lines.append(f"- {label}: do not attempt this action")
-
-    return "\n".join(lines)
-
-
-def _build_prompt(ticket_key: str | None, root: Path, trust: TrustConfig) -> str:
+def _build_prompt(ticket_key: str | None) -> str:
     """Build the -p prompt for the orchestrator session."""
-    parts: list[str] = []
-
-    parts.append(
-        "You are the duct orchestrator. Your job is to review the state of "
-        "active work in this workspace and take action to keep it moving."
-    )
-    parts.append("")
-    parts.append("Start by reading PRIORITY.md to understand current focus, then "
-                 "scan ticket directories to discover active work. For each ticket, "
-                 "read the orchestrator/ directory to understand its state — sync "
-                 "snapshots (TICKET.md, PULL_REQUESTS.md, CI.md, CLAUDE_SESSIONS.md, "
-                 "WORKSPACE.md) and authored artifacts (BACKGROUND.md, AC.md, SPEC.md, "
-                 "ORCHESTRATOR.md, etc.).")
-    parts.append("")
-    parts.append("Ticket directories and sync snapshots are created by `duct sync`, "
-                 "not by the orchestrator. If a ticket key appears in PRIORITY.md but "
-                 "has no directory at the workspace root, it may not have been synced "
-                 "yet — do not create it manually. The `.archive/` directory contains "
-                 "completed tickets and should be ignored.")
-    parts.append("")
-    parts.append("You maintain PRIORITY.md — you may restructure, annotate, reorder, "
-                 "and remove entries freely. Remove entries for archived or closed "
-                 "tickets. Each entry must be a markdown list item (`- `) containing "
-                 "a ticket key so the CLI can parse it.")
-    parts.append("")
-    parts.append("See WORKFLOW.md for development lifecycle guidance.")
-
-    parts.append("")
-    parts.append(_trust_instructions(trust))
-
-    if ticket_key:
-        parts.append("")
-        parts.append(f"Focus this session on ticket {ticket_key}.")
-
-    return "\n".join(parts)
+    ticket_focus = f"\nFocus this session on ticket {ticket_key}." if ticket_key else ""
+    return load_prompt("orchestrator", ticket_focus=ticket_focus)
 
 
 def _format_tool_use(content_block: dict) -> str | None:
@@ -231,8 +153,8 @@ def orchestrate(ctx: click.Context, ticket_key: str | None, dry_run: bool, pre_s
         ctx.exit(1)
         return
 
-    allowed_tools = _build_allowed_tools(cfg.trust)
-    prompt = _build_prompt(ticket_key, root, cfg.trust)
+    allowed_tools = _ALLOWED_TOOLS
+    prompt = _build_prompt(ticket_key)
 
     cmd = [
         claude_bin,

@@ -11,7 +11,6 @@ from duct.config import (
     ConfigError,
     WorkspaceConfig,
     _sync_intervals_to_dict,
-    _trust_to_dict,
     load_config,
 )
 
@@ -23,7 +22,6 @@ def _config_to_full_dict(cfg: WorkspaceConfig) -> dict:
         "jira_domain": cfg.jira_domain,
         "jira_jql": cfg.jira_jql,
         "repo_paths": [str(p) for p in cfg.repo_paths],
-        "trust": _trust_to_dict(cfg.trust),
         "sync_intervals": _sync_intervals_to_dict(cfg.sync_intervals),
     }
 
@@ -60,22 +58,12 @@ def config(ctx: click.Context) -> None:
 _SETTABLE_KEYS = {
     "jira.domain": ("jira", "domain"),
     "jira.jql": ("jira", "jql"),
-    "trust.writeArtifact": ("trust", "writeArtifact"),
-    "trust.gitCommit": ("trust", "gitCommit"),
-    "trust.gitPush": ("trust", "gitPush"),
-    "trust.jiraComment": ("trust", "jiraComment"),
-    "trust.jiraTransition": ("trust", "jiraTransition"),
-    "trust.prCreate": ("trust", "prCreate"),
-    "trust.prMerge": ("trust", "prMerge"),
-    "trust.timeLog": ("trust", "timeLog"),
     "syncIntervals.jira": ("syncIntervals", "jira"),
     "syncIntervals.github": ("syncIntervals", "github"),
     "syncIntervals.sessions": ("syncIntervals", "sessions"),
     "syncIntervals.workspace": ("syncIntervals", "workspace"),
     "syncIntervals.ci": ("syncIntervals", "ci"),
 }
-
-_TRUST_VALUES = {"auto", "propose", "deny"}
 
 
 @config.command("set")
@@ -111,14 +99,6 @@ def config_set(ctx: click.Context, key: str, value: str) -> None:
         raw = {}
 
     section, yaml_key = _SETTABLE_KEYS[key]
-
-    # Validate trust values
-    if section == "trust":
-        if value not in _TRUST_VALUES:
-            valid = ", ".join(sorted(_TRUST_VALUES))
-            error(f"Invalid trust level '{value}'. Must be one of: {valid}")
-            ctx.exit(1)
-            return
 
     # Validate interval values
     if section == "syncIntervals":

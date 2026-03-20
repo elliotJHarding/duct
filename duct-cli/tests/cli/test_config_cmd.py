@@ -43,6 +43,16 @@ def test_config_show_json(tmp_path: Path):
     assert data["jira_domain"] == "test.atlassian.net"
 
 
+def test_config_show_omits_trust(tmp_path: Path):
+    _init_workspace(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "config"])
+
+    assert result.exit_code == 0, result.output
+    assert "trust" not in result.output.lower()
+
+
 # ---------------------------------------------------------------------------
 # config set
 # ---------------------------------------------------------------------------
@@ -73,16 +83,17 @@ def test_config_set_bogus_key(tmp_path: Path):
     assert "Unknown config key" in result.output
 
 
-def test_config_set_trust_invalid(tmp_path: Path):
+def test_config_set_trust_key_rejected(tmp_path: Path):
+    """Trust keys are no longer settable."""
     _init_workspace(tmp_path)
     runner = CliRunner()
 
     result = runner.invoke(
-        cli, ["--workspace-root", str(tmp_path), "config", "set", "trust.gitCommit", "invalid"]
+        cli, ["--workspace-root", str(tmp_path), "config", "set", "trust.gitCommit", "auto"]
     )
 
     assert result.exit_code != 0
-    assert "Invalid trust level" in result.output
+    assert "Unknown config key" in result.output
 
 
 def test_config_set_interval_non_integer(tmp_path: Path):

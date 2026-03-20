@@ -14,7 +14,6 @@ from duct.cli.status_cmd import (
     _count_active_sessions,
     _count_prs,
     _parse_ticket_md,
-    _read_proposed_actions,
     _sync_age,
 )
 
@@ -145,63 +144,6 @@ def test_sync_age_recent(tmp_path: Path):
 
 def test_sync_age_missing(tmp_path: Path):
     assert _sync_age(tmp_path) == "none"
-
-
-# ---------------------------------------------------------------------------
-# _read_proposed_actions
-# ---------------------------------------------------------------------------
-
-
-def test_read_proposed_actions(tmp_path: Path):
-    orch = tmp_path / "orchestrator"
-    orch.mkdir()
-    content = (
-        "# Proposed Actions\n\n"
-        "## Launch implementation session for ERSC-1278\n\n"
-        "AC.md is complete, workspace is set up.\n\n"
-        "## Create PR for ERSC-1300\n\n"
-        "Implementation complete, CI passing.\n"
-    )
-    (orch / "PROPOSED_ACTIONS.md").write_text(content)
-
-    result = _read_proposed_actions(tmp_path)
-
-    assert result == [
-        "Launch implementation session for ERSC-1278",
-        "Create PR for ERSC-1300",
-    ]
-
-
-def test_read_proposed_actions_no_file(tmp_path: Path):
-    assert _read_proposed_actions(tmp_path) == []
-
-
-def test_status_shows_proposed_actions(tmp_path: Path):
-    _init_workspace(tmp_path)
-    ticket_dir = _make_ticket(tmp_path, "PROJ-1", status="In Progress")
-    orch = ticket_dir / "orchestrator"
-    (orch / "PROPOSED_ACTIONS.md").write_text(
-        "# Proposed Actions\n\n## Create PR for PROJ-1\n\nReady for review.\n"
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "status"])
-
-    assert result.exit_code == 0, result.output
-    assert "Proposed Actions" in result.output
-    assert "PROJ-1" in result.output
-    assert "Create PR" in result.output
-
-
-def test_status_hides_proposed_actions_when_none(tmp_path: Path):
-    _init_workspace(tmp_path)
-    _make_ticket(tmp_path, "PROJ-1", status="In Progress")
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "status"])
-
-    assert result.exit_code == 0, result.output
-    assert "Proposed Actions" not in result.output
 
 
 # ---------------------------------------------------------------------------

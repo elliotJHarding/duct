@@ -10,7 +10,7 @@ from click.testing import CliRunner
 
 from duct.cli.main import cli
 from duct.cli.orchestrate_cmd import _build_prompt, _format_stream_event
-from duct.config import TrustConfig, WorkspaceConfig, save_config
+from duct.config import WorkspaceConfig, save_config
 
 
 def _init_workspace(root: Path) -> None:
@@ -56,8 +56,8 @@ class TestOrchestrate:
         assert result.exit_code != 0
         assert "not found" in result.output
 
-    def test_allowed_tools_default(self, tmp_path: Path) -> None:
-        """Default trust config includes Bash (git_commit=propose)."""
+    def test_dry_run_includes_all_tools(self, tmp_path: Path) -> None:
+        """All standard tools are always included."""
         _init_workspace(tmp_path)
         runner = CliRunner()
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
@@ -65,29 +65,8 @@ class TestOrchestrate:
                 cli,
                 ["--workspace-root", str(tmp_path), "orchestrate", "--dry-run"],
             )
-        assert "Bash" in result.output
-
-    def test_allowed_tools_deny_all(self, tmp_path: Path) -> None:
-        """When all shell actions are deny, Bash is excluded."""
-        cfg = WorkspaceConfig(
-            root=tmp_path,
-            trust=TrustConfig(
-                git_commit="deny",
-                git_push="deny",
-                pr_create="deny",
-                pr_merge="deny",
-            ),
-        )
-        save_config(cfg, tmp_path)
-
-        runner = CliRunner()
-        with patch("shutil.which", return_value="/usr/local/bin/claude"):
-            result = runner.invoke(
-                cli,
-                ["--workspace-root", str(tmp_path), "orchestrate", "--dry-run"],
-            )
-        assert "Bash" not in result.output
-        assert "Read" in result.output
+        for tool in ("Read", "Glob", "Grep", "Write", "Edit", "Bash"):
+            assert tool in result.output
 
     def test_dry_run_verbose_adds_stream_json(self, tmp_path: Path) -> None:
         _init_workspace(tmp_path)
@@ -130,19 +109,37 @@ class TestOrchestrate:
 
 
 class TestPromptContent:
-    def test_prompt_includes_sync_boundary(self, tmp_path: Path) -> None:
-        trust = TrustConfig()
-        prompt = _build_prompt(None, tmp_path, trust)
+    def test_prompt_loads_from_file(self) -> None:
+        prompt = _build_prompt(None)
+        assert "duct orchestrator" in prompt
+        assert "PRIORITY.md" in prompt
+        assert "WORKFLOW.md" in prompt
+
+    def test_prompt_includes_sync_boundary(self) -> None:
+        prompt = _build_prompt(None)
         assert "duct sync" in prompt
         assert "do not create it manually" in prompt
         assert ".archive/" in prompt
 
-    def test_prompt_includes_priority_format_guidance(self, tmp_path: Path) -> None:
-        trust = TrustConfig()
-        prompt = _build_prompt(None, tmp_path, trust)
+    def test_prompt_includes_priority_guidance(self) -> None:
+        prompt = _build_prompt(None)
         assert "maintain PRIORITY.md" in prompt
         assert "markdown list item" in prompt
         assert "ticket key" in prompt
+
+    def test_prompt_includes_ticket_focus(self) -> None:
+        prompt = _build_prompt("PROJ-42")
+        assert "Focus this session on ticket PROJ-42" in prompt
+
+    def test_prompt_no_ticket_focus_when_none(self) -> None:
+        prompt = _build_prompt(None)
+        assert "Focus this session" not in prompt
+
+    def test_prompt_has_no_trust_references(self) -> None:
+        prompt = _build_prompt(None)
+        assert "trust" not in prompt.lower()
+        assert "propose" not in prompt.lower()
+        assert "PROPOSED_ACTIONS" not in prompt
 
 
 class TestStreamFormatting:
