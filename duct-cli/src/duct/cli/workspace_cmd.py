@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from duct.cli.output import Col, error, output, success, table
-from duct.cli.resolve import complete_repo_name, complete_ticket_key, resolve_root
+from duct.cli.resolve import resolve_root, write_repo_completion_cache
 from duct.config import ConfigError, WorkspaceConfig, load_config
 from duct.workspace import (
     branch_name,
@@ -147,8 +147,8 @@ def workspace(ctx: click.Context) -> None:
 
 
 @click.command("add-repo")
-@click.argument("key", required=False, shell_complete=complete_ticket_key)
-@click.argument("repo_name", required=False, shell_complete=complete_repo_name)
+@click.argument("key", required=False)
+@click.argument("repo_name", required=False)
 @click.argument("basebranch", required=False)
 @click.option("--branch", default=None, help="Override auto-generated feature branch name.")
 @click.pass_context
@@ -276,6 +276,13 @@ def add_repo(
 
             write_settings(worktree_path, cfg.sandbox)
 
+        # Refresh repo completion cache
+        try:
+            names = [name for name, _ in discover_repos(cfg)]
+            write_repo_completion_cache(root, names)
+        except Exception:
+            pass
+
         success(
             f"Added worktree for {repo_name} at {worktree_path} "
             f"(branch: {feature_branch} from {basebranch})"
@@ -337,7 +344,7 @@ def workspace_status(ctx: click.Context) -> None:
 
 
 @workspace.command("path")
-@click.argument("key", shell_complete=complete_ticket_key)
+@click.argument("key")
 @click.pass_context
 def workspace_path(ctx: click.Context, key: str) -> None:
     """Print the workspace path for a ticket. Useful for shell integration:

@@ -1,11 +1,10 @@
-"""Shared CLI utility: workspace root resolution and completion helpers."""
+"""Shared CLI utility: workspace root resolution and completion cache."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import click
-from click.shell_completion import CompletionItem
 
 from duct.config import find_workspace_root
 
@@ -18,39 +17,9 @@ def resolve_root(ctx: click.Context) -> Path:
     return find_workspace_root()
 
 
-def complete_ticket_key(
-    ctx: click.Context, param: click.Parameter, incomplete: str
-) -> list[CompletionItem]:
-    """Shell completion callback that suggests known ticket keys."""
-    try:
-        root = resolve_root(ctx)
-    except Exception:
-        return []
-    from duct.workspace import enumerate_ticket_dirs
-
-    keys = [key for key, _ in enumerate_ticket_dirs(root)]
-    return [
-        CompletionItem(k)
-        for k in keys
-        if k.lower().startswith(incomplete.lower())
-    ]
-
-
-def complete_repo_name(
-    ctx: click.Context, param: click.Parameter, incomplete: str
-) -> list[CompletionItem]:
-    """Shell completion callback that suggests discovered repository names."""
-    try:
-        root = resolve_root(ctx)
-    except Exception:
-        return []
-    from duct.config import load_config
-    from duct.cli.workspace_cmd import discover_repos
-
-    cfg = load_config(root)
-    names = [name for name, _ in discover_repos(cfg)]
-    return [
-        CompletionItem(n)
-        for n in names
-        if n.lower().startswith(incomplete.lower())
-    ]
+def write_repo_completion_cache(root: Path, repo_names: list[str]) -> None:
+    """Write repo names to .cache/completions/repos.txt for shell completion."""
+    cache_dir = root / ".cache" / "completions"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / "repos.txt"
+    cache_file.write_text("\n".join(sorted(repo_names)) + "\n", encoding="utf-8")

@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from duct.cli.output import output, success
-from duct.config import SandboxConfig, WorkspaceConfig, save_config
+from duct.config import SandboxConfig, WorkspaceConfig, load_config, save_config
 from duct.sandbox import write_settings
 from duct.templates import load_template
 
@@ -107,6 +107,18 @@ def init(ctx: click.Context) -> None:
         success(f"Workspace initialised at {root}")
     else:
         success("Workspace already fully initialised — nothing to do.")
+
+    # Bootstrap repo completion cache if repo paths are configured
+    try:
+        from duct.cli.resolve import write_repo_completion_cache
+        from duct.cli.workspace_cmd import discover_repos
+
+        cfg = load_config(root) if config_path.exists() else WorkspaceConfig(root=root)
+        names = [name for name, _ in discover_repos(cfg)]
+        if names:
+            write_repo_completion_cache(root, names)
+    except Exception:
+        pass
 
     # Post-init guidance
     output("")

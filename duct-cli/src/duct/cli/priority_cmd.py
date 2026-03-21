@@ -5,7 +5,7 @@ from __future__ import annotations
 import click
 
 from duct.cli.output import error, output, success, warn
-from duct.cli.resolve import complete_ticket_key, resolve_root
+from duct.cli.resolve import resolve_root
 from duct.config import ConfigError
 from duct.workspace import read_priority_keys
 
@@ -34,7 +34,7 @@ def priority(ctx: click.Context) -> None:
 
 
 @priority.command("add")
-@click.argument("key", shell_complete=complete_ticket_key)
+@click.argument("key")
 @click.argument("note", nargs=-1)
 @click.pass_context
 def priority_add(ctx: click.Context, key: str, note: tuple[str, ...]) -> None:

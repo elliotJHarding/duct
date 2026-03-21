@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from duct.cli.output import error, output, success, table
-from duct.cli.resolve import complete_ticket_key, resolve_root
+from duct.cli.resolve import resolve_root
 from duct.config import ConfigError
 from duct.markdown import TICKET_KEY_PATTERN
 from duct.workspace import archive_ticket, resolve_ticket_dir, restore_ticket
@@ -63,7 +63,7 @@ def archive_list(ctx: click.Context) -> None:
 
 
 @archive.command("add")
-@click.argument("key", shell_complete=complete_ticket_key)
+@click.argument("key")
 @click.pass_context
 def archive_add(ctx: click.Context, key: str) -> None:
     """Archive a ticket (move it to .archive/)."""
@@ -90,7 +90,7 @@ def archive_add(ctx: click.Context, key: str) -> None:
 
 
 @archive.command("restore")
-@click.argument("key", shell_complete=complete_ticket_key)
+@click.argument("key")
 @click.pass_context
 def archive_restore(ctx: click.Context, key: str) -> None:
     """Restore an archived ticket to the workspace."""

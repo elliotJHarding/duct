@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from duct.cli.output import Col, error, kv, output, section, table
-from duct.cli.resolve import complete_ticket_key, resolve_root
+from duct.cli.resolve import resolve_root
 from duct.config import ConfigError, load_config
 from duct.markdown import extract_table, parse_frontmatter
 from duct.workspace import enumerate_ticket_dirs, read_priority_keys, resolve_ticket_dir
@@ -137,7 +137,7 @@ def ticket_list(
 
 
 @ticket.command("open")
-@click.argument("key", shell_complete=complete_ticket_key)
+@click.argument("key")
 @click.pass_context
 def ticket_open(ctx: click.Context, key: str) -> None:
     """Open a ticket's Jira page in the browser."""
@@ -170,7 +170,7 @@ def ticket_open(ctx: click.Context, key: str) -> None:
 
 
 @ticket.command("show")
-@click.argument("key", shell_complete=complete_ticket_key)
+@click.argument("key")
 @click.pass_context
 def ticket_show(ctx: click.Context, key: str) -> None:
     """Show ticket details and artifact inventory."""

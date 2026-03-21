@@ -12,10 +12,8 @@ import time
 from pathlib import Path
 
 import click
-from click.shell_completion import CompletionItem
-
 from duct.cli.output import Col, error, kv, output, section, success, table
-from duct.cli.resolve import complete_ticket_key, resolve_root
+from duct.cli.resolve import resolve_root
 from duct.config import ConfigError, load_config
 from duct.markdown import TICKET_KEY_PATTERN
 from duct.workspace import enumerate_ticket_dirs, resolve_ticket_dir
@@ -280,21 +278,6 @@ def _match_session_ticket(session: dict, known_keys: set[str]) -> str | None:
     return None
 
 
-def _complete_session_id(
-    ctx: click.Context, param: click.Parameter, incomplete: str
-) -> list[CompletionItem]:
-    """Shell completion callback that suggests active session IDs."""
-    try:
-        sessions = _discover_sessions()
-    except Exception:
-        return []
-    return [
-        CompletionItem(s["session_id"][:12], help=s.get("topic", "")[:40])
-        for s in sessions
-        if s.get("alive") and s.get("session_id", "").startswith(incomplete)
-    ]
-
-
 @click.group()
 @click.pass_context
 def session(ctx: click.Context) -> None:
@@ -373,7 +356,7 @@ def session_list(ctx: click.Context, show_all: bool) -> None:
 
 
 @session.command("show")
-@click.argument("session_id", shell_complete=_complete_session_id)
+@click.argument("session_id")
 @click.pass_context
 def session_show(ctx: click.Context, session_id: str) -> None:
     """Show details for a specific session."""
@@ -452,7 +435,7 @@ def session_show(ctx: click.Context, session_id: str) -> None:
     allow_extra_args=True,
     allow_interspersed_args=False,
 ))
-@click.argument("key", shell_complete=complete_ticket_key)
+@click.argument("key")
 @click.option("--prompt", "-p", default=None, help="Initial prompt for the session.")
 @click.option("--repo", "-r", default=None, help="Start session in a specific repo worktree.")
 @click.option("--skip-permissions", is_flag=True, help="Pass --dangerously-skip-permissions (requires sandbox).")
@@ -684,7 +667,7 @@ def _focus_terminal_tab(tty: str) -> bool:
 
 
 @session.command("jump")
-@click.argument("session_id", shell_complete=_complete_session_id)
+@click.argument("session_id")
 @click.pass_context
 def session_jump(ctx: click.Context, session_id: str) -> None:
     """Jump to the terminal tab running a session."""

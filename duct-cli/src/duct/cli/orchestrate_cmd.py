@@ -11,7 +11,7 @@ from pathlib import Path
 import click
 
 from duct.cli.output import error, output, spinner, success
-from duct.cli.resolve import complete_ticket_key, resolve_root
+from duct.cli.resolve import resolve_root
 from duct.config import ConfigError, load_config
 from duct.prompts import load_prompt
 
@@ -93,7 +93,7 @@ def _format_stream_event(line: str) -> str | None:
 
 
 @click.command()
-@click.option("--ticket", "ticket_key", default=None, help="Focus on a specific ticket.", shell_complete=complete_ticket_key)
+@click.option("--ticket", "ticket_key", default=None, help="Focus on a specific ticket.")
 @click.option("--dry-run", is_flag=True, help="Print the command without executing.")
 @click.option("--sync", "pre_sync", is_flag=True, help="Run sync before launching orchestrator.")
 @click.option("--skip-permissions", is_flag=True, help="Pass --dangerously-skip-permissions (requires sandbox).")

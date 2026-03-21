@@ -60,6 +60,18 @@ def _build_all_sources(cfg) -> tuple[list, list[tuple[str, str]]]:
     return sources, skipped
 
 
+def _refresh_repo_completion_cache(root, cfg) -> None:
+    """Rebuild .cache/completions/repos.txt from configured repo paths."""
+    try:
+        from duct.cli.resolve import write_repo_completion_cache
+        from duct.cli.workspace_cmd import discover_repos
+
+        names = [name for name, _ in discover_repos(cfg)]
+        write_repo_completion_cache(root, names)
+    except Exception:
+        pass  # Best-effort; don't break sync on cache failure
+
+
 def _report_result(r):
     """Print a single sync result as it completes."""
     if r.errors:
@@ -118,6 +130,8 @@ def sync(ctx: click.Context, force: bool) -> None:
             sources, force=force, on_result=on_result, on_start=on_start
         )
 
+    _refresh_repo_completion_cache(root, cfg)
+
     if not results:
         # Show when each source was last synced
         statuses = coordinator.all_source_statuses()
@@ -157,6 +171,8 @@ def _run_single_source(ctx, source_factory):
 
     with spinner(f"Syncing {source.name}..."):
         results = coordinator.run([source], force=force)
+
+    _refresh_repo_completion_cache(root, cfg)
 
     for r in results:
         _report_result(r)
