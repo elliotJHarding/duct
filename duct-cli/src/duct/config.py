@@ -25,6 +25,18 @@ class SyncIntervals:
 
 
 @dataclass(frozen=True)
+class StatusConfig:
+    """Status filtering for the status command."""
+
+    focus_statuses: tuple[str, ...] = (
+        "in progress",
+        "analysis started",
+        "testing failed",
+    )
+    terminal_statuses: tuple[str, ...] = ("closed", "done")
+
+
+@dataclass(frozen=True)
 class SandboxConfig:
     """Sandbox restrictions for Claude Code sessions."""
 
@@ -64,6 +76,7 @@ class WorkspaceConfig:
     )
     sync_intervals: SyncIntervals = field(default_factory=SyncIntervals)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
+    status: StatusConfig = field(default_factory=StatusConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +114,35 @@ def _sandbox_to_dict(sandbox: SandboxConfig) -> dict[str, Any]:
             continue
         yaml_key = _SANDBOX_PY_TO_YAML[f.name]
         val = getattr(sandbox, f.name)
+        if isinstance(val, tuple):
+            val = list(val)
+        result[yaml_key] = val
+    return result
+
+
+_STATUS_YAML_TO_PY = {
+    "focusStatuses": "focus_statuses",
+    "terminalStatuses": "terminal_statuses",
+}
+_STATUS_PY_TO_YAML = {v: k for k, v in _STATUS_YAML_TO_PY.items()}
+
+
+def _parse_status(raw: dict[str, Any]) -> StatusConfig:
+    kwargs: dict[str, Any] = {}
+    for yaml_key, py_key in _STATUS_YAML_TO_PY.items():
+        if yaml_key in raw:
+            val = raw[yaml_key]
+            if isinstance(val, list):
+                val = tuple(v.lower() for v in val)
+            kwargs[py_key] = val
+    return StatusConfig(**kwargs)
+
+
+def _status_to_dict(status: StatusConfig) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for f in fields(status):
+        yaml_key = _STATUS_PY_TO_YAML[f.name]
+        val = getattr(status, f.name)
         if isinstance(val, tuple):
             val = list(val)
         result[yaml_key] = val
@@ -149,6 +191,7 @@ def load_config(root: Path) -> WorkspaceConfig:
 
     sync_intervals = _parse_sync_intervals(raw.get("syncIntervals", {}))
     sandbox = _parse_sandbox(raw.get("sandbox", {}))
+    status = _parse_status(raw.get("status", {}))
 
     return WorkspaceConfig(
         root=ws_root,
@@ -157,6 +200,7 @@ def load_config(root: Path) -> WorkspaceConfig:
         repo_paths=repo_paths,
         sync_intervals=sync_intervals,
         sandbox=sandbox,
+        status=status,
     )
 
 
@@ -176,6 +220,7 @@ def save_config(config: WorkspaceConfig, root: Path) -> None:
         "repoPaths": [str(p) for p in config.repo_paths],
         "syncIntervals": _sync_intervals_to_dict(config.sync_intervals),
         "sandbox": _sandbox_to_dict(config.sandbox),
+        "status": _status_to_dict(config.status),
     }
     config_path = root / _CONFIG_FILENAME
     config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))

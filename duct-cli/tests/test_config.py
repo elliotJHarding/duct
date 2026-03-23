@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from duct.config import (
+    StatusConfig,
     SyncIntervals,
     WorkspaceConfig,
     find_workspace_root,
@@ -110,6 +111,47 @@ def test_save_config_omits_trust(tmp_workspace: Path) -> None:
 
     raw = yaml.safe_load((tmp_workspace / "config.yaml").read_text())
     assert "trust" not in raw
+
+
+# ---------------------------------------------------------------------------
+# StatusConfig
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_with_status_section(tmp_workspace: Path) -> None:
+    config_data = {
+        "workspace": {"root": str(tmp_workspace)},
+        "status": {
+            "focusStatuses": ["To Do", "In Review"],
+            "terminalStatuses": ["Resolved"],
+        },
+    }
+    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+
+    cfg = load_config(tmp_workspace)
+
+    assert cfg.status.focus_statuses == ("to do", "in review")
+    assert cfg.status.terminal_statuses == ("resolved",)
+
+
+def test_load_config_without_status_uses_defaults(tmp_workspace: Path) -> None:
+    cfg = load_config(tmp_workspace)
+    assert cfg.status == StatusConfig()
+
+
+def test_save_and_load_status_round_trip(tmp_workspace: Path) -> None:
+    original = WorkspaceConfig(
+        root=tmp_workspace,
+        status=StatusConfig(
+            focus_statuses=("blocked", "waiting"),
+            terminal_statuses=("archived",),
+        ),
+    )
+    save_config(original, tmp_workspace)
+    loaded = load_config(tmp_workspace)
+
+    assert loaded.status.focus_statuses == original.status.focus_statuses
+    assert loaded.status.terminal_statuses == original.status.terminal_statuses
 
 
 # ---------------------------------------------------------------------------

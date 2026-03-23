@@ -10,7 +10,7 @@ import click
 
 from duct.cli.output import Col, error, output, table
 from duct.cli.resolve import resolve_root
-from duct.config import ConfigError
+from duct.config import ConfigError, load_config
 from duct.markdown import extract_table, parse_frontmatter
 from duct.workspace import enumerate_ticket_dirs, read_priority_keys
 
@@ -139,10 +139,6 @@ def _sync_age(ticket_dir: Path) -> str:
         return "?"
 
 
-_TERMINAL_STATUSES = {"closed", "done"}
-_FOCUS_STATUSES = {"in progress", "analysis started"}
-
-
 @click.command()
 @click.option("--all", "show_all", is_flag=True, help="Show all tickets except Closed/Done.")
 @click.option("--closed", "show_closed", is_flag=True, help="Include Closed and Done tickets.")
@@ -150,7 +146,9 @@ _FOCUS_STATUSES = {"in progress", "analysis started"}
 def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
     """Show a unified dashboard of all tracked work.
 
-    Default: focused view (In Progress and Analysis Started only).
+    Default: focused view showing only statuses listed in config
+    (status.focusStatuses).  Use --all to show everything except terminal
+    statuses, or --closed to include those too.
     """
     try:
         root = resolve_root(ctx)
@@ -158,6 +156,10 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
         error(str(exc))
         ctx.exit(1)
         return
+
+    cfg = load_config(root)
+    focus_statuses = set(cfg.status.focus_statuses)
+    terminal_statuses = set(cfg.status.terminal_statuses)
 
     tickets = enumerate_ticket_dirs(root)
     if not tickets:
@@ -208,9 +210,9 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
     if show_closed:
         pass  # show everything
     elif show_all:
-        entries = [e for e in entries if e["status"].lower() not in _TERMINAL_STATUSES]
+        entries = [e for e in entries if e["status"].lower() not in terminal_statuses]
     else:
-        entries = [e for e in entries if e["status"].lower() in _FOCUS_STATUSES]
+        entries = [e for e in entries if e["status"].lower() in focus_statuses]
 
     if not entries:
         output("No tickets match the current filter.")

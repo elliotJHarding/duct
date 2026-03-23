@@ -155,6 +155,7 @@ def test_status_default_filter(tmp_path: Path):
     _init_workspace(tmp_path)
     _make_ticket(tmp_path, "PROJ-1", status="In Progress")
     _make_ticket(tmp_path, "PROJ-2", status="Done")
+    _make_ticket(tmp_path, "PROJ-3", status="Testing Failed")
 
     runner = CliRunner()
     result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "status"])
@@ -162,6 +163,7 @@ def test_status_default_filter(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert "PROJ-1" in result.output
     assert "PROJ-2" not in result.output
+    assert "PROJ-3" in result.output
 
 
 def test_status_all_excludes_done(tmp_path: Path):
@@ -188,6 +190,27 @@ def test_status_closed_shows_everything(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert "PROJ-1" in result.output
     assert "PROJ-2" in result.output
+
+
+def test_status_uses_configured_focus_statuses(tmp_path: Path):
+    _init_workspace(tmp_path)
+    import yaml
+
+    config_data = {
+        "workspace": {"root": str(tmp_path)},
+        "status": {"focusStatuses": ["To Do"]},
+    }
+    (tmp_path / "config.yaml").write_text(yaml.dump(config_data))
+
+    _make_ticket(tmp_path, "PROJ-1", status="To Do")
+    _make_ticket(tmp_path, "PROJ-2", status="In Progress")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "PROJ-1" in result.output
+    assert "PROJ-2" not in result.output
 
 
 def test_status_no_tickets(tmp_path: Path):
