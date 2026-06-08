@@ -13,9 +13,15 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
+import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from duct.markdown import TICKET_KEY_PATTERN, generate_frontmatter
+
+if TYPE_CHECKING:
+    from duct.config import SandboxConfig
 
 _SLUG_STRIP_RE = re.compile(r"[^a-z0-9]+")
 
@@ -179,6 +185,22 @@ def orchestrator_dir(ticket_dir: Path) -> Path:
     return d
 
 
+def find_repo_dirs(ticket_dir: Path) -> list[Path]:
+    """Return immediate child directories of *ticket_dir* that are git repos.
+
+    A child counts as a repo when it contains a ``.git`` entry. The
+    ``orchestrator/`` subdirectory is excluded. Result is sorted alphabetically.
+    """
+    if not ticket_dir.is_dir():
+        return []
+    return [
+        child for child in sorted(ticket_dir.iterdir())
+        if child.is_dir()
+        and child.name != "orchestrator"
+        and (child / ".git").exists()
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Enumeration
 # ---------------------------------------------------------------------------
@@ -204,30 +226,6 @@ def enumerate_ticket_dirs(root: Path) -> list[tuple[str, Path]]:
 
 
 # ---------------------------------------------------------------------------
-# Priority helpers
-# ---------------------------------------------------------------------------
-
-def read_priority_keys(root: Path) -> list[str]:
-    """Read PRIORITY.md and return ticket keys in priority order.
-
-    Works with both flat format (``- KEY``) and rich format
-    (``- **KEY** — notes``, sections, commentary).  Any markdown list
-    item containing a ticket key is recognised.
-    """
-    priority_file = root / "PRIORITY.md"
-    if not priority_file.exists():
-        return []
-    keys: list[str] = []
-    for line in priority_file.read_text().splitlines():
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            m = TICKET_KEY_PATTERN.search(stripped)
-            if m:
-                keys.append(m.group(0))
-    return keys
-
-
-# ---------------------------------------------------------------------------
 # Archive / restore
 # ---------------------------------------------------------------------------
 
@@ -235,7 +233,6 @@ def archive_ticket(root: Path, key: str) -> Path | None:
     """Move the ticket directory for *key* into ``root/.archive/``.
 
     Returns the archive path, or None if no matching ticket dir was found.
-    Priority cleanup is handled by the orchestrator.
     """
     src = resolve_ticket_dir(root, key)
     if src is None:
@@ -269,3 +266,86 @@ def restore_ticket(root: Path, key: str) -> Path | None:
     dest = root / src.name
     shutil.move(str(src), str(dest))
     return dest
+
+
+# ---------------------------------------------------------------------------
+# Worktree creation
+# ---------------------------------------------------------------------------
+
+
+def _fetch_base_branch(repo_path: Path, base_branch: str) -> str:
+    """Fetch ``base_branch`` from origin and return the ref to branch from.
+
+    Returns ``origin/<base_branch>`` when the fetch succeeds so the new
+    worktree starts from the latest upstream commit. Falls back to the local
+    ``<base_branch>`` ref (with a stderr warning) when there is no ``origin``
+    remote, no network, or the branch is not present on origin.
+    """
+    result = subprocess.run(
+        ["git", "fetch", "origin", base_branch],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode == 0:
+        return f"origin/{base_branch}"
+
+    detail = (result.stderr or result.stdout).strip()
+    print(
+        f"warning: could not fetch origin/{base_branch} "
+        f"({detail or 'unknown error'}); branching from local {base_branch}",
+        file=sys.stderr,
+    )
+    return base_branch
+
+
+def create_worktree(
+    ticket_dir: Path,
+    repo_path: Path,
+    repo_name: str,
+    base_branch: str,
+    feature_branch: str,
+    sandbox: "SandboxConfig | None" = None,
+) -> Path:
+    """Create a git worktree for a ticket.
+
+    Attempts to create ``feature_branch`` from ``base_branch``. If the branch
+    already exists, falls back to checking it out into the worktree.
+
+    Writes sandbox settings into the worktree when ``sandbox`` is enabled.
+
+    Returns the worktree path. Raises ``RuntimeError`` on git failure.
+    """
+    worktree_path = ticket_dir / repo_name
+
+    source_ref = _fetch_base_branch(repo_path, base_branch)
+
+    result = subprocess.run(
+        [
+            "git", "worktree", "add",
+            str(worktree_path), "-b", feature_branch,
+            source_ref, "--no-track",
+        ],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        # Branch may already exist — try without -b
+        result = subprocess.run(
+            ["git", "worktree", "add", str(worktree_path), feature_branch],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+
+    if sandbox is not None and sandbox.enabled:
+        from duct.sandbox import write_settings
+        write_settings(worktree_path, sandbox)
+
+    return worktree_path

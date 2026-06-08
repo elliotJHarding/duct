@@ -1,4 +1,4 @@
-"""duct status — unified dashboard showing priority-ordered tickets with context."""
+"""duct status — unified dashboard showing tickets grouped by status with context."""
 
 from __future__ import annotations
 
@@ -8,11 +8,12 @@ from pathlib import Path
 
 import click
 
+from duct.api import _status_group_rank
 from duct.cli.output import Col, error, output, table
 from duct.cli.resolve import resolve_root
 from duct.config import ConfigError, load_config
 from duct.markdown import extract_table, parse_frontmatter
-from duct.workspace import enumerate_ticket_dirs, read_priority_keys
+from duct.workspace import enumerate_ticket_dirs
 
 
 def _parse_ticket_md(content: str) -> dict[str, str]:
@@ -166,10 +167,6 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
         output("No tracked tickets. Run 'duct sync --force' to get started.")
         return
 
-    # Build priority ordering
-    priority_keys = read_priority_keys(root)
-    priority_map = {k: i for i, k in enumerate(priority_keys)}
-
     entries: list[dict] = []
     for key, path in tickets:
         ticket_md = path / "orchestrator" / "TICKET.md"
@@ -185,16 +182,11 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
         dirty = _check_dirty_repos(path)
         age = _sync_age(path)
 
-        pri_pos = priority_map.get(key)
-        pri_str = f"#{pri_pos + 1}" if pri_pos is not None else ""
-
         entries.append({
             "key": info.get("key", key),
             "summary": info.get("summary", ""),
             "status": info.get("status", ""),
             "category": info.get("category", ""),
-            "priority_position": pri_pos if pri_pos is not None else len(priority_keys),
-            "priority": pri_str,
             "prs": pr_count,
             "ci": ci_status,
             "sessions": sessions,
@@ -203,8 +195,12 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
             "path": str(path),
         })
 
-    # Sort by priority position (prioritized tickets first, then the rest)
-    entries.sort(key=lambda e: e["priority_position"])
+    # Sort by status group (focus → other → terminal), then activity desc, then key.
+    entries.sort(key=lambda e: (
+        _status_group_rank(e["status"], cfg),
+        -(e["sessions"] + e["dirty_repos"] + e["prs"]),
+        e["key"],
+    ))
 
     # Filter by status
     if show_closed:
@@ -219,7 +215,6 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
         return
 
     columns: list[str | Col] = [
-        Col("Pri", justify="right"),
         "Key",
         "Status",
         Col("Category", max_width=20),
@@ -271,7 +266,6 @@ def status(ctx: click.Context, show_all: bool, show_closed: bool) -> None:
             sync_str = sync_raw
 
         rows.append([
-            e["priority"],
             e["key"],
             e["status"],
             e["category"],

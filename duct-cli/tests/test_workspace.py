@@ -1,17 +1,19 @@
 """Tests for duct.workspace utilities."""
 
 import os
+import subprocess
 from pathlib import Path
 
 from duct.workspace import (
     archive_ticket,
     branch_name,
+    create_worktree,
     ensure_epic_link,
     ensure_ticket_dir,
     enumerate_ticket_dirs,
+    find_repo_dirs,
     orchestrator_dir,
     read_issue_type,
-    read_priority_keys,
     resolve_ticket_dir,
     restore_ticket,
     slug,
@@ -237,6 +239,50 @@ class TestEnumerateTicketDirs:
     def test_empty_workspace(self, tmp_workspace: Path):
         assert enumerate_ticket_dirs(tmp_workspace) == []
 
+
+# ---------------------------------------------------------------------------
+# find_repo_dirs()
+# ---------------------------------------------------------------------------
+
+class TestFindRepoDirs:
+    def _make_repo(self, parent: Path, name: str) -> Path:
+        repo = parent / name
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        return repo
+
+    def test_returns_git_subdirs_alphabetically(self, tmp_path: Path):
+        ticket = tmp_path / "ERSC-1-task"
+        ticket.mkdir()
+        self._make_repo(ticket, "policy")
+        self._make_repo(ticket, "claims")
+        assert [p.name for p in find_repo_dirs(ticket)] == ["claims", "policy"]
+
+    def test_excludes_orchestrator_even_if_git(self, tmp_path: Path):
+        ticket = tmp_path / "ERSC-2-task"
+        ticket.mkdir()
+        orch = ticket / "orchestrator"
+        orch.mkdir()
+        (orch / ".git").mkdir()
+        self._make_repo(ticket, "claims")
+        assert [p.name for p in find_repo_dirs(ticket)] == ["claims"]
+
+    def test_excludes_non_git_subdirs(self, tmp_path: Path):
+        ticket = tmp_path / "ERSC-3-task"
+        ticket.mkdir()
+        (ticket / "notes").mkdir()
+        self._make_repo(ticket, "claims")
+        assert [p.name for p in find_repo_dirs(ticket)] == ["claims"]
+
+    def test_empty_when_no_repos(self, tmp_path: Path):
+        ticket = tmp_path / "ERSC-4-task"
+        ticket.mkdir()
+        (ticket / "orchestrator").mkdir()
+        assert find_repo_dirs(ticket) == []
+
+    def test_returns_empty_when_ticket_dir_missing(self, tmp_path: Path):
+        assert find_repo_dirs(tmp_path / "missing") == []
+
     def test_skips_dotdirs(self, tmp_workspace: Path):
         hidden = tmp_workspace / ".archive"
         hidden.mkdir()
@@ -244,38 +290,6 @@ class TestEnumerateTicketDirs:
         d.mkdir()
         (d / "orchestrator").mkdir()
         assert enumerate_ticket_dirs(tmp_workspace) == []
-
-
-# ---------------------------------------------------------------------------
-# read_priority_keys()
-# ---------------------------------------------------------------------------
-
-class TestReadPriorityKeys:
-    def test_flat_format(self, tmp_workspace: Path):
-        (tmp_workspace / "PRIORITY.md").write_text(
-            "# Priority\n\n- ERSC-100\n- ERSC-200\n"
-        )
-        assert read_priority_keys(tmp_workspace) == ["ERSC-100", "ERSC-200"]
-
-    def test_rich_format(self, tmp_workspace: Path):
-        (tmp_workspace / "PRIORITY.md").write_text(
-            "# Priority\n\n"
-            "## Current Focus\n\n"
-            "- **ERSC-100** — PR open, awaiting review\n"
-            "- **ERSC-200** — spec in progress\n\n"
-            "## Needs Attention\n\n"
-            "- ERSC-300 — blocked on deploy\n"
-        )
-        assert read_priority_keys(tmp_workspace) == [
-            "ERSC-100", "ERSC-200", "ERSC-300",
-        ]
-
-    def test_no_file(self, tmp_workspace: Path):
-        assert read_priority_keys(tmp_workspace) == []
-
-    def test_empty_file(self, tmp_workspace: Path):
-        (tmp_workspace / "PRIORITY.md").write_text("")
-        assert read_priority_keys(tmp_workspace) == []
 
 
 # ---------------------------------------------------------------------------
@@ -295,20 +309,6 @@ class TestArchiveTicket:
     def test_returns_none_when_missing(self, tmp_workspace: Path):
         assert archive_ticket(tmp_workspace, "ERSC-999") is None
 
-    def test_does_not_modify_priority(self, tmp_workspace: Path):
-        """archive_ticket no longer touches PRIORITY.md — orchestrator handles that."""
-        d = tmp_workspace / "ERSC-700-task"
-        d.mkdir()
-        (d / "orchestrator").mkdir()
-        priority = tmp_workspace / "PRIORITY.md"
-        priority.write_text("# Priority\n\n- ERSC-700\n- ERSC-800\n")
-
-        archive_ticket(tmp_workspace, "ERSC-700")
-
-        content = priority.read_text()
-        assert "ERSC-700" in content  # still present — orchestrator cleans up
-        assert "ERSC-800" in content
-
 
 class TestRestoreTicket:
     def test_restores_to_root(self, tmp_workspace: Path):
@@ -326,3 +326,104 @@ class TestRestoreTicket:
 
     def test_returns_none_when_no_archive(self, tmp_workspace: Path):
         assert restore_ticket(tmp_workspace, "ERSC-999") is None
+
+
+# ---------------------------------------------------------------------------
+# create_worktree()
+# ---------------------------------------------------------------------------
+
+
+def _git(args: list[str], cwd: Path) -> str:
+    env = {
+        "GIT_AUTHOR_NAME": "Tester",
+        "GIT_AUTHOR_EMAIL": "tester@example.com",
+        "GIT_COMMITTER_NAME": "Tester",
+        "GIT_COMMITTER_EMAIL": "tester@example.com",
+        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+    }
+    result = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _make_repo_with_origin(tmp_path: Path) -> tuple[Path, Path]:
+    """Build a working repo with an ``origin`` bare remote.
+
+    Returns (repo_path, origin_path). The bare ``origin`` carries an extra
+    commit on ``main`` that the local clone has not pulled yet, so the local
+    ``main`` ref is one commit behind ``origin/main``.
+    """
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    _git(["init", "-b", "main"], seed)
+    (seed / "README.md").write_text("v1\n")
+    _git(["add", "README.md"], seed)
+    _git(["commit", "-m", "v1"], seed)
+
+    origin = tmp_path / "origin.git"
+    _git(["clone", "--bare", str(seed), str(origin)], tmp_path)
+
+    repo = tmp_path / "repo"
+    _git(["clone", str(origin), str(repo)], tmp_path)
+
+    # Advance origin/main past the local clone via a second working copy.
+    other = tmp_path / "other"
+    _git(["clone", str(origin), str(other)], tmp_path)
+    (other / "README.md").write_text("v2\n")
+    _git(["add", "README.md"], other)
+    _git(["commit", "-m", "v2"], other)
+    _git(["push", "origin", "main"], other)
+
+    return repo, origin
+
+
+class TestCreateWorktree:
+    def test_branches_from_origin_when_local_is_stale(self, tmp_path: Path):
+        repo, origin = _make_repo_with_origin(tmp_path)
+        local_main = _git(["rev-parse", "main"], repo)
+        origin_main = _git(["rev-parse", "main"], origin)
+        assert local_main != origin_main, "fixture should leave local main behind"
+
+        ticket_dir = tmp_path / "workspace" / "ERSC-1-task"
+        ticket_dir.mkdir(parents=True)
+
+        worktree = create_worktree(
+            ticket_dir=ticket_dir,
+            repo_path=repo,
+            repo_name="repo",
+            base_branch="main",
+            feature_branch="feature/ERSC-1",
+        )
+
+        head = _git(["rev-parse", "HEAD"], worktree)
+        assert head == origin_main
+        assert head != local_main
+
+    def test_falls_back_when_no_origin_remote(self, tmp_path: Path, capsys):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git(["init", "-b", "main"], repo)
+        (repo / "README.md").write_text("only\n")
+        _git(["add", "README.md"], repo)
+        _git(["commit", "-m", "only"], repo)
+        local_main = _git(["rev-parse", "main"], repo)
+
+        ticket_dir = tmp_path / "workspace" / "ERSC-2-task"
+        ticket_dir.mkdir(parents=True)
+
+        worktree = create_worktree(
+            ticket_dir=ticket_dir,
+            repo_path=repo,
+            repo_name="repo",
+            base_branch="main",
+            feature_branch="feature/ERSC-2",
+        )
+
+        assert _git(["rev-parse", "HEAD"], worktree) == local_main
+        assert "could not fetch origin/main" in capsys.readouterr().err

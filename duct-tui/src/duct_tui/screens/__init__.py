@@ -1,5 +1,1 @@
-"""duct TUI screens."""
-
-from .main import MainScreen
-
-__all__ = ["MainScreen"]
+"""Screen definitions for duct TUI."""

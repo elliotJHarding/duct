@@ -9,7 +9,8 @@ from pathlib import Path
 
 from duct.markdown import atomic_write, generate_frontmatter
 from duct.models import SyncResult
-from duct.workspace import enumerate_ticket_dirs, orchestrator_dir
+from duct.sandbox import load_settings_template, merge_settings_template
+from duct.workspace import enumerate_ticket_dirs, find_repo_dirs, orchestrator_dir
 
 
 class WorkspaceSync:
@@ -20,13 +21,17 @@ class WorkspaceSync:
         errors: list[str] = []
         synced = 0
 
+        template = load_settings_template(root)
+
         for key, ticket_dir in enumerate_ticket_dirs(root):
-            repos = self._find_repos(ticket_dir)
-            if not repos:
-                continue
             try:
-                self._write_workspace_md(repos, ticket_dir)
-                synced += 1
+                repos = self._find_repos(ticket_dir)
+                if repos:
+                    self._write_workspace_md(repos, ticket_dir)
+                if template is not None:
+                    merge_settings_template(ticket_dir, template)
+                if repos or template is not None:
+                    synced += 1
             except Exception as exc:
                 errors.append(f"{key}: {exc}")
 
@@ -39,14 +44,7 @@ class WorkspaceSync:
 
     def _find_repos(self, ticket_dir: Path) -> list[dict]:
         """Find git repos inside a ticket dir (siblings of orchestrator/)."""
-        repos = []
-        for child in sorted(ticket_dir.iterdir()):
-            if child.name == "orchestrator" or not child.is_dir():
-                continue
-            if (child / ".git").exists():
-                info = self._repo_info(child)
-                repos.append(info)
-        return repos
+        return [self._repo_info(repo) for repo in find_repo_dirs(ticket_dir)]
 
     def _repo_info(self, repo_path: Path) -> dict:
         """Extract git branch, status, and recent commits."""

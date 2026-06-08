@@ -1,0 +1,20 @@
+# Synthetic fixture — Claude Code edit-approval prompt. Distinct anchor
+# from tool-approval: "Do you want to make this edit".
+#
+# Expected: classify_activity -> "waiting", detect_mode -> "default"
+
+⏺ Edit(src/foo.py)
+  ⎿  @@ -10,7 +10,7 @@
+     - return "old"
+     + return "new"
+
+  Do you want to make this edit to src/foo.py?
+❯ 1. Yes
+  2. Yes, and don't ask again for Edit in this session
+  3. No, tell Claude what to do differently
+
+─────────────────────────────────────────────────────────────────────────────── session ──
+❯
+───────────────────────────────────────────────────────────────────────────────────────────
+  hardinge@Mac ~/workspace main
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

@@ -1,0 +1,19 @@
+# Synthetic fixture — Claude Code tool-approval prompt. Anchors on the
+# canonical "Do you want to proceed?" phrase, which is stable across
+# approval variants (Bash, Task, etc.).
+#
+# Expected: classify_activity -> "waiting", detect_mode -> "default"
+
+⏺ Bash(rm -rf /tmp/build)
+  ⎿  The agent wants to run: rm -rf /tmp/build
+
+  Do you want to proceed?
+❯ 1. Yes
+  2. Yes, and don't ask again for Bash commands
+  3. No, tell Claude what to do differently
+
+─────────────────────────────────────────────────────────────────────────────── session ──
+❯
+───────────────────────────────────────────────────────────────────────────────────────────
+  hardinge@Mac ~/workspace main
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

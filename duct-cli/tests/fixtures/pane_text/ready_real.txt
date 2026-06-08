@@ -1,0 +1,58 @@
+  Root cause: servlet-path stripping. The DispatcherServlet in web.xml is mapped to /api/*, so Tomcat strips the /api prefix before handing the path to Spring. Handler @GetMapping paths must be        
+  relative to the servlet mapping, i.e. start with /v1/... not /api/v1/.... The existing ClaimSearchApiController works because its OpenAPI-generated interface uses /v1/claim-search/search — I'd copied
+   the URL from what I saw when hitting the endpoint externally (/ice-claims/api/v1/...) and baked the /api in twice. All of the scan/RMHM count weirdness was a red herring; the 3                      
+  RequestMappingHandlerMapping class-histogram count was misleading (Spring's bean factory has exactly 1 — confirmed via the handlerMappingBean field on the responses), and the bean was being          
+  registered correctly all along. The 404 was simply "path doesn't match" at the handler-mapping lookup stage.                                                                                           
+                                                                                                                                                                                                         
+  Final state:                                                                                 
+                                                                                                                                                                                                         
+  ┌─────────────────────────┬──────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐          
+  │        Endpoint         │                               URL                                │                                            Status                                            │          
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ Spring MVC mapping dump │ GET http://localhost:8081/ice-claims/api/v1/_debug/mappings      │ ✅ 200, 115 mappings, 44952 bytes                                                            │          
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ ICEC-1638 claim search  │ POST http://localhost:8081/ice-claims/api/v1/claim-search/search │ ✅ 500 "Insufficient search criteria" on empty body (business rejection, end-to-end working) │          
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Gateway                 │ POST http://localhost:8090/claims/search (still up)              │ ✅ Basic auth user/[generated], proxies correctly                                            │
+  └─────────────────────────┴──────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘          
+                                                                                                                                                                                                         
+  Files changed from the plan:                                                                                                                                                                           
+  - As planned: ice-common-project/ice-claims-service/src/main/java/com/itf/server/service/internal/api/DebugMappingsController.java — new file, the @GetMapping value is /v1/_debug/mappings (NOT       
+  /api/v1/_debug/mappings as the plan originally specified). Plan document is outdated on that one field — worth a 1-line amend if you want it to reflect reality.                                
+  - No other changes — dispatcher-servlet.xml, security config, pom/build.gradle, web.xml, and all log4j2.xml source files are untouched. Temporary diagnostic TRACE overrides on the deployed log4j2.xml
+   were eliminated by the redeploy.                                                            
+                                                                                                                                                                                                         
+  Handy curl recipes:                                                                          
+                                                                                                                                                                                                         
+  # find an endpoint by class                                                                                                                                                                            
+  curl -sS http://localhost:8081/ice-claims/api/v1/_debug/mappings \
+    | jq '.[] | select(.handlerClass | endswith("ClaimSearchApiController"))'                                                                                                                            
+                                                                                               
+  # everything under /v1 (the ICEC-1638 POC internal API surface)                                                                                                                                        
+  curl -sS http://localhost:8081/ice-claims/api/v1/_debug/mappings \
+    | jq '[.[] | select(.patterns[]? | startswith("/v1"))]'                                                                                                                                              
+                                                                                                                                                                                                         
+  # total mapping count                                                                                                                                                                                  
+  curl -sS http://localhost:8081/ice-claims/api/v1/_debug/mappings | jq 'length'                                                                                                                         
+  # → 115                                                                                                                                                                                                
+                                               
+  Side benefits of the diagnostic exercise:                                                                                                                                                              
+  - Confirmed params and headers are stripped from the JSON when empty — InternalApiObjectMapper has NON_EMPTY inclusion. Not a bug, just a quirk worth knowing when you're wondering why your field     
+  vanished.                                                                                                                                                                                         
+  - Confirmed Spring's bean factory has exactly 1 RequestMappingHandlerMapping bean (not 3 as class_histogram implied) — handlerMappingBean field reports                                                
+  org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping. The class_histogram discrepancy is probably temporary instances created and discarded during parser setup.
+                                                                                                                                                                                                         
+  The params/headers absence is a minor quality-of-life nit that could be fixed by @JsonInclude(JsonInclude.Include.ALWAYS) on the record, but it doesn't block anything — left as-is since the plan spec
+   didn't call for it.                                                                                                                                                                                   
+                                                                                                                                                                                                         
+✻ Crunched for 14m 39s                         
+                                                                                                                                                                                                         
+● How is Claude doing this session? (optional)                                                 
+  1: Bad    2: Fine   3: Good   0: Dismiss                                                                                                                                                               
+                                                                                               
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── postman-collections-build-output ──
+❯  
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  hardinge@Mac \~/workspace/duct/ICEC-1638-claims-apis-poc/ice-claims ICEC-1638-claims-apis-poc
+  ⏵⏵ bypass permissions on (shift+tab to cycle)                                                                                                                  new task? /clear to save 409.5k tokens
+

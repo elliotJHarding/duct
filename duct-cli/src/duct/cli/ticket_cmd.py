@@ -11,7 +11,7 @@ from duct.cli.output import Col, error, kv, output, section, table
 from duct.cli.resolve import resolve_root
 from duct.config import ConfigError, load_config
 from duct.markdown import extract_table, parse_frontmatter
-from duct.workspace import enumerate_ticket_dirs, read_priority_keys, resolve_ticket_dir
+from duct.workspace import enumerate_ticket_dirs, resolve_ticket_dir
 
 
 def _parse_ticket_md(content: str) -> dict[str, str]:
@@ -60,7 +60,7 @@ def ticket(ctx: click.Context) -> None:
     "--sort",
     "sort_by",
     default=None,
-    type=click.Choice(["priority", "key", "status", "category"]),
+    type=click.Choice(["key", "status", "category"]),
     help="Sort results.",
 )
 @click.pass_context
@@ -111,11 +111,7 @@ def ticket_list(
         entries = [e for e in entries if st_lower in e["status"].lower()]
 
     # Sort
-    if sort_by == "priority":
-        priority_keys = read_priority_keys(root)
-        priority_map = {k: i for i, k in enumerate(priority_keys)}
-        entries.sort(key=lambda e: priority_map.get(e["key"], len(priority_keys)))
-    elif sort_by == "key":
+    if sort_by == "key":
         entries.sort(key=lambda e: e["key"])
     elif sort_by == "status":
         entries.sort(key=lambda e: e["status"])

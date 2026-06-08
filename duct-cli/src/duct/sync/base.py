@@ -115,7 +115,19 @@ class SyncCoordinator:
                 continue
             if on_start:
                 on_start(source.name)
-            result = source.sync(self._root)
+            started = time.time()
+            try:
+                result = source.sync(self._root)
+            except Exception as exc:
+                # A raising source must not advance its timestamp; surface the
+                # failure as a SyncResult so callers can report it alongside
+                # other sources instead of aborting the whole run.
+                result = SyncResult(
+                    source=source.name,
+                    tickets_synced=0,
+                    duration_seconds=time.time() - started,
+                    errors=[f"{type(exc).__name__}: {exc}"],
+                )
             results.append(result)
             if not result.errors:
                 state[source.name] = time.time()

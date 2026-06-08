@@ -1,0 +1,218 @@
+Screen {
+    background: $background;
+}
+
+/* Ensure highlighted options remain readable across all OptionList panels */
+OptionList > .option-list--option-highlighted {
+    color: $foreground;
+    background: $panel;
+}
+
+OptionList:focus > .option-list--option-highlighted {
+    color: $foreground;
+    background: $accent 40%;
+}
+
+SyncStatusBar {
+    dock: top;
+    height: 1;
+    text-style: dim;
+    padding: 0 2;
+    margin: 0 0 1 0;
+}
+
+.panel-title {
+    text-style: bold;
+    color: $accent;
+    margin: 1 0 0 0;
+}
+
+TicketList {
+    border: round $panel;
+    height: 1fr;
+    min-height: 8;
+}
+
+SessionPanel {
+    border: round $panel;
+    height: 1fr;
+    min-height: 8;
+    padding-top: 1;
+}
+
+SessionPanel > .option-list--option {
+    padding: 0 1;
+}
+
+AttentionQueue {
+    border: round $panel;
+    height: auto;
+    max-height: 12;
+}
+
+ActionPanel, AllActionsPanel {
+    border: round $panel;
+    height: 1fr;
+    min-height: 6;
+    layout: vertical;
+}
+
+ActionPanel #action-list, AllActionsPanel #all-actions-list {
+    height: 1fr;
+    min-height: 3;
+}
+
+ActionPanel #action-feedback-area, AllActionsPanel #all-actions-feedback-area {
+    height: auto;
+    border-top: solid $panel;
+    padding: 0 1;
+}
+
+ActionPanel #action-footer-hint,
+AllActionsPanel #all-actions-footer-hint {
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
+    background: $surface;
+}
+
+ActionPanel .hidden, AllActionsPanel .hidden {
+    display: none;
+}
+
+TaskPanel {
+    border: round $panel;
+    height: 1fr;
+    min-height: 6;
+}
+
+TaskPanel .hidden {
+    display: none;
+}
+
+PRPanel {
+    border: round $panel;
+    height: 1fr;
+    min-height: 6;
+}
+
+WorkspacePanel {
+    border: round $panel;
+    height: 1fr;
+    min-height: 12;
+    layout: vertical;
+}
+
+WorkspacePanel #repo-list {
+    height: 1fr;
+    min-height: 3;
+}
+
+WorkspacePanel #add-repo-form {
+    height: auto;
+    border-top: solid $panel;
+    padding: 0 1;
+}
+
+WorkspacePanel #add-repo-heading {
+    text-style: bold;
+    color: $accent;
+    margin-top: 1;
+}
+
+WorkspacePanel #add-repo-form FuzzyCombobox {
+    margin-top: 1;
+}
+
+WorkspacePanel #add-repo-form > Input {
+    margin-top: 1;
+}
+
+WorkspacePanel #add-btn {
+    margin-top: 1;
+}
+
+WorkspacePanel #add-repo-status {
+    height: auto;
+    margin-top: 1;
+}
+
+
+#confirm-message {
+    padding: 2 4;
+    text-align: center;
+}
+
+#confirm-buttons {
+    align-horizontal: center;
+    padding: 1 0;
+}
+
+#confirm-buttons Button {
+    margin: 0 2;
+}
+
+#help-content {
+    padding: 2 4;
+    border: round $panel;
+    max-width: 60;
+    max-height: 30;
+}
+
+#launch-modal {
+    padding: 2 4;
+    border: round $panel;
+    max-width: 60;
+    height: auto;
+}
+
+#modal-title {
+    text-style: bold;
+    color: $accent;
+    margin: 0 0 1 0;
+}
+
+#modal-buttons {
+    margin: 1 0 0 0;
+    align-horizontal: center;
+}
+
+#modal-buttons Button {
+    margin: 0 2;
+}
+
+/* Match the fenced code block background so inline and fenced code rhyme visually. */
+Markdown .code_inline {
+    background: black 10%;
+    color: $accent;
+}
+
+.mermaid-placeholder {
+    padding: 1 2;
+    text-style: dim italic;
+}
+
+.mermaid-image {
+    margin: 1 2 2 2;
+    max-width: 80;
+    align-horizontal: center;
+}
+
+Footer {
+    background: #1a1a1a;
+    FooterKey {
+        background: #1a1a1a;
+        .footer-key--key {
+            background: #1a1a1a;
+            color: $accent;
+            text-style: bold;
+        }
+        .footer-key--description {
+            background: #1a1a1a;
+        }
+    }
+    FooterKey.-command-palette {
+        background: #1a1a1a;
+        border-left: vkey $panel;
+    }
+}

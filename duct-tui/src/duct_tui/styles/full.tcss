@@ -1,0 +1,167 @@
+TicketFilterBar {
+    dock: top;
+    height: 1;
+    text-style: dim;
+    padding: 0 2;
+}
+
+TicketCardList {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#ticket-card-list-loading {
+    width: 1fr;
+    height: 1fr;
+    content-align: center middle;
+    text-style: dim italic;
+}
+
+TicketCard {
+    width: 56;
+    min-width: 32;
+    height: 1fr;
+    padding: 1 3;
+    border: wide $panel;
+    margin: 0 1;
+}
+
+TicketCard:focus {
+    border: wide $accent;
+}
+
+TicketCard.phase-active {
+    border: wide $phase-active 40%;
+}
+TicketCard.phase-active:focus {
+    border: wide $phase-active;
+}
+
+TicketCard.phase-post {
+    border: wide $phase-post 40%;
+}
+TicketCard.phase-post:focus {
+    border: wide $phase-post;
+}
+
+TicketCard.phase-pre {
+    border: wide $phase-pre 40%;
+}
+TicketCard.phase-pre:focus {
+    border: wide $phase-pre;
+}
+
+/* Tickets assigned to other people sink to the end of the list (sort
+   order set in get_ticket_overviews) and get a more muted border so the
+   user's own tickets dominate the page. */
+TicketCard.not-mine {
+    border: wide $panel 30%;
+}
+TicketCard.not-mine:focus {
+    border: wide $accent;
+}
+
+TicketTab {
+    height: 1fr;
+}
+
+#ticket-panels {
+    height: 1fr;
+}
+
+TicketSummaryPane {
+    /* Match the Sessions-tab split's left pane: when SessionPreview is
+       docked (width 70%), #tabs gets the remaining 30% and SessionPanel
+       fills it. Using 30% here keeps the ticket tab's summary column
+       the same visual width. */
+    width: 30%;
+    min-width: 28;
+    border: round $panel;
+    padding: 0 1;
+}
+
+/* When a session is selected (app.py toggles `.session-split`), the
+   SessionPreview / wezterm dock claims 70% of the screen and the ticket
+   tab is squeezed into the remaining ~30%. Collapse the detail switcher
+   and let the summary column take the full tab width so it stays readable. */
+#main-layout.session-split TicketSummaryPane {
+    width: 100%;
+    max-width: 100%;
+}
+
+#main-layout.session-split #detail-switcher {
+    display: none;
+}
+
+/* Orchestrator tab: when a conductor session is docked, hide the run-log
+   column and let the AllActionsPanel claim the full tab width — actions
+   are the remaining TUI interaction surface while the docked session
+   delivers live output alongside. */
+#main-layout.session-split #conductor-log {
+    display: none;
+}
+
+#main-layout.session-split OrchestratorTab AllActionsPanel {
+    width: 100%;
+    max-width: 100%;
+}
+
+TicketSummaryPane:focus {
+    border: round $accent;
+}
+
+#detail-switcher {
+    width: 1fr;
+    height: 1fr;
+}
+
+ArtifactView {
+    border: round $panel;
+    padding: 1 2;
+}
+
+ArtifactView:focus {
+    border: round $accent;
+}
+
+#detail-workspace {
+    height: 1fr;
+}
+
+#detail-prs {
+    height: 1fr;
+}
+
+#detail-sessions {
+    height: 1fr;
+}
+
+#main-layout {
+    height: 1fr;
+}
+
+#main-layout #tabs {
+    width: 1fr;
+}
+
+SessionPreview {
+    display: none;
+    width: 70%;
+    padding: 0 1;
+}
+
+#detail-tasks {
+    height: 1fr;
+}
+
+#detail-actions {
+    height: 1fr;
+}
+
+OrchestratorTab {
+    height: 1fr;
+}
+
+#orchestrator-panels {
+    height: 1fr;
+}

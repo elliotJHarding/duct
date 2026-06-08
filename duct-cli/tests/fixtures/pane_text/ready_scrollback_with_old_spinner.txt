@@ -1,0 +1,47 @@
+# Regression fixture — an old in-progress spinner line (with ellipsis +
+# duration) sits high in the scrollback from a prior turn. The current
+# state is idle (most recent line is "Worked for …" with no ellipsis). The
+# matcher must only inspect the TAIL (last ~25 lines) so the stale working
+# anchor doesn't false-trigger.
+#
+# Expected: classify_activity -> None, detect_mode -> "default"
+
+Earlier scrollback (should be ignored):
+
+· Compiling… (12s · ↓ 42 tokens · thought for 1s)
+· Compiling… (1m 04s · ↓ 156 tokens · thought for 3s)
+· Compiling… (2m 30s · ↓ 412 tokens · thought for 7s)
+
+✻ Worked for 2m 51s
+
+────────────────────────────────────────────────────────────
+
+⏺ Build succeeded. Running the full test suite.
+
+  ✓ test_foo
+  ✓ test_bar
+  ✓ test_baz
+  ✓ test_qux
+  ✓ test_quux
+  ✓ test_corge
+  ✓ test_grault
+  ✓ test_garply
+
+  All 8 tests passed.
+
+⏺ Here is the summary you requested.
+
+  - Refactored the auth module to use the new token flow
+  - Added a retry layer around the outbound HTTP client
+  - Introduced a circuit breaker for the downstream service
+  - Updated the integration tests to cover the new error paths
+
+  Let me know if you'd like me to dig into any of these.
+
+✻ Worked for 12m 04s
+
+─────────────────────────────────────────────────────────────────────────────── session ──
+❯
+───────────────────────────────────────────────────────────────────────────────────────────
+  hardinge@Mac ~/workspace main
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

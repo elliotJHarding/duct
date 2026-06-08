@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,18 +24,24 @@ _PR_FIELDS = """
         title
         state
         isDraft
+        mergeable
         url
         createdAt
         updatedAt
         mergedAt
         headRefName
         repository { nameWithOwner }
-        author { login }
+        author { login ... on User { avatarUrl } }
         reviews(last: 10) {
           nodes { state author { login } }
         }
         reviewRequests(first: 10) {
-          nodes { requestedReviewer { ... on User { login } } }
+          nodes {
+            requestedReviewer {
+              ... on User { login }
+              ... on Team { slug organization { login } }
+            }
+          }
         }
         commits(last: 1) {
           nodes {
@@ -89,6 +96,31 @@ class GitHubSync:
             "Content-Type": "application/json",
         }
 
+    def _post_with_retry(
+        self, *, json: dict, retries: int = 2
+    ) -> tuple[httpx.Response, float]:
+        """POST to the GitHub GraphQL endpoint with retry on transient errors.
+
+        Returns (response, elapsed_seconds) for the final attempt. Elapsed is
+        exposed so callers can include it in diagnostic error messages — useful
+        for telling whether 502s are happening at a consistent timeout.
+        """
+        for attempt in range(retries + 1):
+            start = time.monotonic()
+            try:
+                response = httpx.post(
+                    _GRAPHQL_URL,
+                    headers=self._headers,
+                    json=json,
+                    timeout=30,
+                )
+                return response, time.monotonic() - start
+            except httpx.RemoteProtocolError:
+                if attempt == retries:
+                    raise
+                time.sleep(1)
+        raise RuntimeError("unreachable")  # keeps type-checker happy
+
     def sync(self, root: Path) -> SyncResult:
         start = time.time()
         errors: list[str] = []
@@ -101,7 +133,7 @@ class GitHubSync:
 
         try:
             all_prs = self._search_prs()
-        except (AuthError, SyncError) as exc:
+        except (AuthError, SyncError, httpx.RemoteProtocolError) as exc:
             return SyncResult(
                 source=self.name,
                 tickets_synced=0,
@@ -112,8 +144,7 @@ class GitHubSync:
         # Match PRs to tickets
         ticket_prs: dict[str, list[PullRequest]] = {k: [] for k in ticket_keys}
         for pr in all_prs:
-            matched_keys = self._match_ticket_keys(pr, ticket_keys)
-            for key in matched_keys:
+            for key in self._match_ticket_keys(pr, ticket_keys):
                 ticket_prs[key].append(pr)
 
         # Write PULL_REQUESTS.md for each ticket that has PRs
@@ -131,6 +162,22 @@ class GitHubSync:
             except Exception as exc:
                 errors.append(f"{key}: failed to write PR data - {exc}")
 
+        # Review PRs: every still-open PR GitHub says needs the current user's
+        # review (personally or via a team they belong to), regardless of
+        # whether it matched a workspace ticket. `needs_my_review` carries that
+        # signal from the review-requested search query. Merged/closed PRs and
+        # the user's own PRs are excluded — nothing to review there.
+        review_prs = [
+            pr for pr in all_prs
+            if pr.state == "open"
+            and pr.needs_my_review
+            and pr.author != self._username
+        ]
+        try:
+            self._write_review_prs_md(review_prs, root)
+        except Exception as exc:
+            errors.append(f"review_prs: failed to write - {exc}")
+
         return SyncResult(
             source=self.name,
             tickets_synced=synced,
@@ -139,98 +186,52 @@ class GitHubSync:
         )
 
     def _search_prs(self) -> list[PullRequest]:
-        """Search GitHub for PRs via batched GraphQL queries, deduplicate by repo#number."""
+        """Search GitHub for PRs across all relevant queries, dedup by repo#number.
+
+        Each query is sent as its own GraphQL request rather than batched into a
+        single aliased query. Batching 3 searches × 50 PRs × deep nested fields
+        into one request reliably tripped GitHub's ~10s edge timeout and surfaced
+        as a 502 Bad Gateway. Per-query requests stay within budget; the trade
+        is N round-trips instead of 1.
+        """
+        who = self._username or "@me"
+        review_query = f"type:pr review-requested:{who}"
         if self._username:
             queries = [
                 f"type:pr author:{self._username}",
                 f"type:pr assignee:{self._username}",
-                f"type:pr review-requested:{self._username}",
+                review_query,
             ]
         else:
             queries = [
                 "type:pr author:@me",
-                "type:pr review-requested:@me",
+                review_query,
             ]
 
-        # Batch all queries into a single GraphQL request using aliases
+        # The review-requested query is GitHub's authoritative "needs my review"
+        # signal — it includes PRs requested from a team the user belongs to,
+        # which `requested_reviewers` (User-only) can't see. Stamp those PRs so
+        # the flag survives independent of who the listed reviewers are.
         seen: dict[str, PullRequest] = {}
-        prs_by_alias, needs_pagination = self._graphql_search_batched(queries)
-        for alias_prs in prs_by_alias.values():
-            for pr in alias_prs:
+        for query in queries:
+            needs_review = query == review_query
+            for pr in self._graphql_search(query, needs_review=needs_review):
                 dedup_key = f"{pr.repo}#{pr.number}"
-                if dedup_key not in seen:
+                existing = seen.get(dedup_key)
+                if existing is None:
                     seen[dedup_key] = pr
-
-        # Only paginate individually for queries that had more results
-        for query in needs_pagination:
-            for pr in self._graphql_search(query):
-                dedup_key = f"{pr.repo}#{pr.number}"
-                if dedup_key not in seen:
-                    seen[dedup_key] = pr
-
+                elif needs_review and not existing.needs_my_review:
+                    seen[dedup_key] = replace(existing, needs_my_review=True)
         return list(seen.values())
 
-    def _graphql_search_batched(
-        self, queries: list[str]
-    ) -> tuple[dict[str, list[PullRequest]], list[str]]:
-        """Execute multiple search queries in a single GraphQL request using aliases.
+    def _graphql_search(
+        self, query: str, *, needs_review: bool = False
+    ) -> list[PullRequest]:
+        """Execute a paginated GraphQL search and return PullRequest models.
 
-        Returns (results_by_alias, queries_needing_pagination).
+        ``needs_review`` stamps each parsed PR's ``needs_my_review`` flag — set
+        for the review-requested query so the signal isn't re-derived downstream.
         """
-        # Build a single query with aliased search fields
-        parts = ["query("]
-        params = []
-        for i in range(len(queries)):
-            params.append(f"$q{i}: String!")
-        parts.append(", ".join(params))
-        parts.append(") {")
-        for i in range(len(queries)):
-            parts.append(f"  s{i}: search(query: $q{i}, type: ISSUE, first: 50) {{")
-            parts.append(_PR_FIELDS)
-            parts.append("  }")
-        parts.append("}")
-        query_str = "\n".join(parts)
-
-        variables = {f"q{i}": q for i, q in enumerate(queries)}
-
-        response = httpx.post(
-            _GRAPHQL_URL,
-            headers=self._headers,
-            json={"query": query_str, "variables": variables},
-            timeout=30,
-        )
-
-        if response.status_code == 401:
-            raise AuthError("GitHub authentication failed (401)")
-        if response.status_code != 200:
-            raise SyncError(f"GitHub API error: {response.status_code}")
-
-        data = response.json()
-        if "errors" in data:
-            raise SyncError(f"GitHub GraphQL errors: {data['errors']}")
-
-        results: dict[str, list[PullRequest]] = {}
-        needs_pagination: list[str] = []
-
-        for i, query in enumerate(queries):
-            alias = f"s{i}"
-            search = data.get("data", {}).get(alias, {})
-            nodes = search.get("nodes", [])
-            prs = []
-            for node in nodes:
-                if not node or "number" not in node:
-                    continue
-                prs.append(self._parse_pr_node(node))
-            results[alias] = prs
-
-            page_info = search.get("pageInfo", {})
-            if page_info.get("hasNextPage"):
-                needs_pagination.append(query)
-
-        return results, needs_pagination
-
-    def _graphql_search(self, query: str) -> list[PullRequest]:
-        """Execute a paginated GraphQL search and return PullRequest models."""
         prs: list[PullRequest] = []
         cursor = None
 
@@ -239,21 +240,24 @@ class GitHubSync:
             if cursor:
                 variables["cursor"] = cursor
 
-            response = httpx.post(
-                _GRAPHQL_URL,
-                headers=self._headers,
+            response, elapsed = self._post_with_retry(
                 json={"query": _PR_SEARCH_QUERY, "variables": variables},
-                timeout=30,
             )
 
             if response.status_code == 401:
                 raise AuthError("GitHub authentication failed (401)")
             if response.status_code != 200:
-                raise SyncError(f"GitHub API error: {response.status_code}")
+                body = response.text[:500] if response.text else "<empty body>"
+                raise SyncError(
+                    f"GitHub API error: {response.status_code} after {elapsed:.1f}s\n"
+                    f"body: {body}"
+                )
 
             data = response.json()
             if "errors" in data:
-                raise SyncError(f"GitHub GraphQL errors: {data['errors']}")
+                raise SyncError(
+                    f"GitHub GraphQL errors after {elapsed:.1f}s: {data['errors']}"
+                )
 
             search = data.get("data", {}).get("search", {})
             nodes = search.get("nodes", [])
@@ -261,7 +265,7 @@ class GitHubSync:
             for node in nodes:
                 if not node or "number" not in node:
                     continue
-                pr = self._parse_pr_node(node)
+                pr = self._parse_pr_node(node, needs_review=needs_review)
                 prs.append(pr)
 
             page_info = search.get("pageInfo", {})
@@ -272,7 +276,7 @@ class GitHubSync:
 
         return prs
 
-    def _parse_pr_node(self, node: dict) -> PullRequest:
+    def _parse_pr_node(self, node: dict, *, needs_review: bool = False) -> PullRequest:
         """Parse a GraphQL PR node into a PullRequest model."""
         if node.get("mergedAt"):
             state = "merged"
@@ -301,6 +305,24 @@ class GitHubSync:
                 reviewer_map[login] = r.get("state", "")
         reviewers = [Reviewer(login=lg, state=st) for lg, st in reviewer_map.items()]
 
+        # Reviewers requested but who haven't yet posted a review. A
+        # requestedReviewer is either a User (has `login`) or a Team (has
+        # `slug` + `organization`). Dedup users against the reviewers list — if
+        # someone's already reviewed, they belong only in `reviewers`.
+        requested_reviewers: list[str] = []
+        requested_teams: list[str] = []
+        for rr in node.get("reviewRequests", {}).get("nodes", []) or []:
+            requested = rr.get("requestedReviewer") or {}
+            login = requested.get("login", "")
+            if login:
+                if login not in reviewer_map:
+                    requested_reviewers.append(login)
+                continue
+            slug = requested.get("slug", "")
+            if slug:
+                org = (requested.get("organization") or {}).get("login", "")
+                requested_teams.append(f"{org}/{slug}" if org else slug)
+
         # Collect comments from both regular comments and review threads
         comments: list[PRComment] = []
         for c in node.get("comments", {}).get("nodes", []):
@@ -322,12 +344,13 @@ class GitHubSync:
                         line=c.get("line"),
                     ))
 
+        author = node.get("author") or {}
         return PullRequest(
             number=node["number"],
             title=node.get("title", ""),
             repo=node.get("repository", {}).get("nameWithOwner", ""),
             state=state,
-            author=node.get("author", {}).get("login", "unknown"),
+            author=author.get("login", "unknown"),
             is_draft=node.get("isDraft", False),
             review_status=review_status,
             ci_status=ci_status,
@@ -337,6 +360,11 @@ class GitHubSync:
             branch=node.get("headRefName", ""),
             reviewers=reviewers,
             comments=comments,
+            requested_reviewers=requested_reviewers,
+            mergeable=node.get("mergeable") or "UNKNOWN",
+            author_avatar_url=author.get("avatarUrl") or None,
+            needs_my_review=needs_review,
+            requested_teams=requested_teams,
         )
 
     def _derive_review_status(self, reviews: list[dict]) -> str:
@@ -355,8 +383,23 @@ class GitHubSync:
         matches = set(TICKET_KEY_PATTERN.findall(text))
         return matches & known_keys
 
+    def _write_review_prs_md(self, prs: list[PullRequest], root: Path) -> None:
+        """Write orphan review-requested PRs to `.review_prs.md` at root.
+
+        Always written (even when the list is empty) so stale state is cleared
+        on every sync.
+        """
+        content = self._format_prs_md(prs)
+        atomic_write(root / ".review_prs.md", content)
+
     def _write_pull_requests_md(self, prs: list[PullRequest], ticket_dir: Path) -> None:
         """Write PULL_REQUESTS.md into the orchestrator directory for a ticket."""
+        content = self._format_prs_md(prs)
+        orch = orchestrator_dir(ticket_dir)
+        atomic_write(orch / "PULL_REQUESTS.md", content)
+
+    def _format_prs_md(self, prs: list[PullRequest]) -> str:
+        """Render a list of PRs as a PULL_REQUESTS.md document."""
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         parts: list[str] = []
 
@@ -370,12 +413,25 @@ class GitHubSync:
             parts.append(f"## #{pr.number} - {pr.title}{draft}")
             parts.append("")
             parts.append(f"- **Repo**: {pr.repo}")
+            if pr.branch:
+                parts.append(f"- **Branch**: {pr.branch}")
             parts.append(f"- **State**: {pr.state}")
             parts.append(f"- **Author**: @{pr.author}")
+            if pr.author_avatar_url:
+                parts.append(f"- **Author Avatar**: {pr.author_avatar_url}")
             parts.append(f"- **Review**: {pr.review_status}")
             parts.append(f"- **CI**: {pr.ci_status}")
+            parts.append(f"- **Mergeable**: {pr.mergeable}")
             parts.append(f"- **Created**: {pr.created_at}")
             parts.append(f"- **Updated**: {pr.updated_at}")
+            if pr.requested_reviewers:
+                requested = ", ".join(f"@{login}" for login in pr.requested_reviewers)
+                parts.append(f"- **Requested Reviewers**: {requested}")
+            if pr.requested_teams:
+                teams = ", ".join(f"@{slug}" for slug in pr.requested_teams)
+                parts.append(f"- **Requested Teams**: {teams}")
+            if pr.needs_my_review:
+                parts.append("- **Needs Review**: true")
             parts.append(f"- [View on GitHub]({pr.url})")
             parts.append("")
 
@@ -397,6 +453,4 @@ class GitHubSync:
                         parts.append(f"> {line}")
                     parts.append("")
 
-        content = "\n".join(parts)
-        orch = orchestrator_dir(ticket_dir)
-        atomic_write(orch / "PULL_REQUESTS.md", content)
+        return "\n".join(parts)

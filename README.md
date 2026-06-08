@@ -47,8 +47,6 @@ duct workspace add-repo <KEY> <R>  Add a repo worktree
 duct workspace status              Show workspace health
 duct archive list                  List archived tickets
 duct archive restore <KEY>         Restore an archived ticket
-duct priority                      Show priority list
-duct priority set <KEY> [KEY...]   Set priority order
 duct orchestrate                   Launch orchestrator session
 duct orchestrate --ticket <KEY>    Focus on a specific ticket
 ```
@@ -60,7 +58,6 @@ All commands support `--json` for structured output and `--workspace-root` to ov
 ```
 {workspace_root}/
     config.yaml
-    PRIORITY.md
     WORKFLOW.md
     .claude/CLAUDE.md
     {EPIC_KEY}-{slug}/

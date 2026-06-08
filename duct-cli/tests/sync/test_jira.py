@@ -126,7 +126,13 @@ class TestExtractTicket:
         assert ticket.components == ["Backend"]
         assert ticket.labels == ["security", "mvp"]
         assert "OAuth2" in ticket.description
+        assert ticket.customer_name == "ERS"
         assert ticket.url == "https://jira.example.com/browse/PROJ-101"
+
+    def test_customer_name_none_when_field_null(self, jira: JiraSync, search_response: dict):
+        issue = search_response["issues"][1]
+        ticket = jira._extract_ticket(issue, {})
+        assert ticket.customer_name is None
 
     def test_unassigned_when_null(self, jira: JiraSync, search_response: dict):
         issue = search_response["issues"][1]
@@ -221,7 +227,7 @@ class TestSearchIssues:
                     "jql": "assignee = currentUser()",
                     "fields": str(
                         "summary,status,priority,issuetype,assignee,project,parent,"
-                        "customfield_10014,customfield_10020,fixVersions,components,"
+                        "customfield_10014,customfield_10020,customfield_11704,fixVersions,components,"
                         "labels,comment,description"
                     ),
                     "startAt": "0",
@@ -337,6 +343,7 @@ class TestWriteTicketMd:
             description="Add OAuth2 login flow.",
             epic_key="PROJ-50",
             sprint="Sprint 5",
+            customer_name="ERS",
             fix_versions=["1.2.0"],
             components=["Backend"],
             labels=["security"],
@@ -373,6 +380,7 @@ class TestWriteTicketMd:
         assert "| Category | Active Development |" in content
         assert "| Priority | High |" in content
         assert "| Type | Story |" in content
+        assert "| Customer Name | ERS |" in content
         assert "| Assignee | Alice Smith |" in content
         assert "| Epic | PROJ-50 |" in content
         assert "| Fix Version | 1.2.0 |" in content
@@ -448,6 +456,8 @@ class TestWriteTicketMd:
         assert "| Components | \u2014 |" in content
         assert "| Labels | \u2014 |" in content
         assert "| Epic | \u2014 |" in content
+        # Customer Name row is omitted entirely when the field is absent (non-PS projects).
+        assert "Customer Name" not in content
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +478,7 @@ class TestFullSync:
                     "jql": "assignee = currentUser()",
                     "fields": str(
                         "summary,status,priority,issuetype,assignee,project,parent,"
-                        "customfield_10014,customfield_10020,fixVersions,components,"
+                        "customfield_10014,customfield_10020,customfield_11704,fixVersions,components,"
                         "labels,comment,description"
                     ),
                     "startAt": "0",
@@ -476,6 +486,12 @@ class TestFullSync:
                 },
             ),
             json=search_response,
+        )
+
+        # Mock /myself so the identity cache write doesn't 404.
+        httpx_mock.add_response(
+            url="https://jira.example.com/rest/api/3/myself",
+            json={"accountId": "user-abc"},
         )
 
         # Mock transitions for both tickets.
@@ -538,7 +554,7 @@ class TestFullSync:
         assert "# PROJ-101: Implement user authentication" in content_101
         assert "- Start Review" in content_101
 
-    def test_sync_archives_stale_tickets(
+    def test_sync_archives_stale_tickets_in_terminal_status(
         self, jira: JiraSync, httpx_mock, tmp_workspace: Path,
     ):
         # Create a pre-existing ticket directory that will disappear from results.
@@ -546,18 +562,75 @@ class TestFullSync:
         stale_dir.mkdir()
         (stale_dir / "orchestrator").mkdir()
 
-        # Return empty search results.
+        # Empty search results — the stale ticket has dropped off the query.
         httpx_mock.add_response(
             json={"startAt": 0, "maxResults": 50, "total": 0, "issues": []},
+        )
+        # Identity resolution after a successful search.
+        httpx_mock.add_response(
+            url="https://jira.example.com/rest/api/3/myself",
+            json={"accountId": "user-abc"},
+        )
+        # Follow-up status fetch confirms the ticket is Done, so archiving proceeds.
+        httpx_mock.add_response(
+            json={"fields": {"status": {"name": "Done"}}},
         )
 
         result = jira.sync(tmp_workspace)
 
         assert result.tickets_synced == 0
-        # The stale ticket should have been archived.
         assert not stale_dir.exists()
         archive_dir = tmp_workspace / ".archive" / "STALE-1-old-ticket"
         assert archive_dir.exists()
+
+    def test_sync_keeps_stale_tickets_in_non_terminal_status(
+        self, jira: JiraSync, httpx_mock, tmp_workspace: Path,
+    ):
+        # A ticket drops off the query (e.g. reassigned for testing) but is
+        # still in a non-terminal status — it should stay in the workspace.
+        stale_dir = tmp_workspace / "STALE-2-reassigned-ticket"
+        stale_dir.mkdir()
+        (stale_dir / "orchestrator").mkdir()
+
+        httpx_mock.add_response(
+            json={"startAt": 0, "maxResults": 50, "total": 0, "issues": []},
+        )
+        httpx_mock.add_response(
+            url="https://jira.example.com/rest/api/3/myself",
+            json={"accountId": "user-abc"},
+        )
+        httpx_mock.add_response(
+            json={"fields": {"status": {"name": "Analysis Started"}}},
+        )
+
+        result = jira.sync(tmp_workspace)
+
+        assert result.tickets_synced == 0
+        assert stale_dir.exists()
+        assert not (tmp_workspace / ".archive" / "STALE-2-reassigned-ticket").exists()
+
+    def test_sync_keeps_stale_tickets_when_status_fetch_fails(
+        self, jira: JiraSync, httpx_mock, tmp_workspace: Path,
+    ):
+        # If Jira can't tell us the status, we keep the ticket rather than
+        # risk archiving something the user is still responsible for.
+        stale_dir = tmp_workspace / "STALE-3-unknown-ticket"
+        stale_dir.mkdir()
+        (stale_dir / "orchestrator").mkdir()
+
+        httpx_mock.add_response(
+            json={"startAt": 0, "maxResults": 50, "total": 0, "issues": []},
+        )
+        httpx_mock.add_response(
+            url="https://jira.example.com/rest/api/3/myself",
+            json={"accountId": "user-abc"},
+        )
+        httpx_mock.add_response(status_code=500, text="Internal Server Error")
+
+        result = jira.sync(tmp_workspace)
+
+        assert result.tickets_synced == 0
+        assert stale_dir.exists()
 
     def test_sync_returns_errors_on_auth_failure(
         self, jira: JiraSync, httpx_mock, tmp_workspace: Path,
@@ -576,6 +649,10 @@ class TestFullSync:
         tmp_workspace: Path,
     ):
         httpx_mock.add_response(json=search_response)
+        httpx_mock.add_response(
+            url="https://jira.example.com/rest/api/3/myself",
+            json={"accountId": "user-abc"},
+        )
         httpx_mock.add_response(json=transitions_response)
         httpx_mock.add_response(json={"transitions": []})
 
@@ -590,3 +667,66 @@ class TestFullSync:
                 import json
                 data = json.loads(settings.read_text())
                 assert data["sandbox"]["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# post_comment
+# ---------------------------------------------------------------------------
+
+
+class TestPostComment:
+    def test_posts_adf_body(self, jira: JiraSync, httpx_mock):
+        httpx_mock.add_response(
+            url="https://jira.example.com/rest/api/3/issue/PROJ-101/comment",
+            status_code=201,
+            json={"id": "12345"},
+        )
+
+        jira.post_comment("PROJ-101", "Implementation complete.\nCI passing.")
+
+        request = httpx_mock.get_request()
+        assert request.method == "POST"
+        body = json.loads(request.content)
+        adf = body["body"]
+        assert adf["type"] == "doc"
+        assert adf["version"] == 1
+        assert len(adf["content"]) == 2
+        assert adf["content"][0]["content"][0]["text"] == "Implementation complete."
+        assert adf["content"][1]["content"][0]["text"] == "CI passing."
+
+    def test_skips_blank_lines(self, jira: JiraSync, httpx_mock):
+        httpx_mock.add_response(status_code=201, json={"id": "1"})
+
+        jira.post_comment("PROJ-101", "Line one\n\n  \nLine two")
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert len(body["body"]["content"]) == 2
+
+    def test_empty_body_is_noop(self, jira: JiraSync, httpx_mock):
+        jira.post_comment("PROJ-101", "")
+        assert len(httpx_mock.get_requests()) == 0
+
+    def test_whitespace_only_body_is_noop(self, jira: JiraSync, httpx_mock):
+        jira.post_comment("PROJ-101", "  \n  \n  ")
+        assert len(httpx_mock.get_requests()) == 0
+
+    def test_auth_failure_raises(self, jira: JiraSync, httpx_mock):
+        httpx_mock.add_response(status_code=401, text="Unauthorized")
+
+        with pytest.raises(AuthError, match="401"):
+            jira.post_comment("PROJ-101", "test")
+
+    def test_forbidden_raises(self, jira: JiraSync, httpx_mock):
+        httpx_mock.add_response(status_code=403, text="Forbidden")
+
+        with pytest.raises(AuthError, match="403"):
+            jira.post_comment("PROJ-101", "test")
+
+    def test_server_error_raises(self, jira: JiraSync, httpx_mock):
+        from duct.exceptions import SyncError
+
+        httpx_mock.add_response(status_code=500, text="Internal Server Error")
+
+        with pytest.raises(SyncError, match="500"):
+            jira.post_comment("PROJ-101", "test")

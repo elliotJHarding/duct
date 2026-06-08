@@ -37,33 +37,30 @@ def test_doctor_invalid_config(tmp_path: Path):
     assert result.exit_code != 0 or "FAIL" in result.output
 
 
-def test_doctor_missing_priority_and_workflow(tmp_path: Path):
+def test_doctor_missing_workflow(tmp_path: Path):
     _init_workspace(tmp_path)
     runner = CliRunner()
 
     result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "doctor"])
 
     assert "FAIL" in result.output
-    assert "PRIORITY.md" in result.output
     assert "WORKFLOW.md" in result.output
 
 
 def test_doctor_missing_auth(tmp_path: Path):
     _init_workspace(tmp_path)
-    (tmp_path / "PRIORITY.md").write_text("# Priority\n")
     (tmp_path / "WORKFLOW.md").write_text("# Workflow\n")
     runner = CliRunner()
 
-    env = {"JIRA_EMAIL": "", "JIRA_TOKEN": "", "GH_TOKEN": "", "GITHUB_TOKEN": ""}
+    # The keychain is empty (conftest) and gh is absent, so no creds resolve.
     with patch("shutil.which", side_effect=lambda cmd: None if cmd in ("gh", "claude") else f"/usr/bin/{cmd}"):
-        result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "doctor"], env=env)
+        result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "doctor"])
 
     assert "FAIL" in result.output
 
 
 def test_doctor_happy_path(tmp_path: Path):
     _init_workspace(tmp_path)
-    (tmp_path / "PRIORITY.md").write_text("# Priority\n")
     (tmp_path / "WORKFLOW.md").write_text("# Workflow\n")
     runner = CliRunner()
 
@@ -71,7 +68,10 @@ def test_doctor_happy_path(tmp_path: Path):
     mock_response.status_code = 200
     mock_response.json.return_value = {"displayName": "Test User", "login": "testuser"}
 
-    env = {"JIRA_EMAIL": "test@test.com", "JIRA_TOKEN": "token", "GH_TOKEN": "ghtoken", "SHELL": "/bin/bash"}
+    from duct.credentials import Credentials, save_credentials
+    save_credentials(Credentials(jira_email="test@test.com", jira_token="token", gh_token="ghtoken"))
+
+    env = {"SHELL": "/bin/bash"}
 
     # Create a fake .bashrc with completion marker so shell integration passes
     fake_home = tmp_path / "fakehome"

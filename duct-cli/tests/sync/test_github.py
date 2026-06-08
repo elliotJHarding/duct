@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -21,15 +22,6 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 @pytest.fixture
 def graphql_response() -> dict:
     return json.loads((FIXTURES / "github_graphql_response.json").read_text())
-
-
-def _batched_response(single_search_data: dict, count: int = 3) -> dict:
-    """Convert a single-search response into a batched aliased response.
-
-    The batched GraphQL query uses aliases s0, s1, ... instead of a single 'search' key.
-    """
-    search = single_search_data["data"]["search"]
-    return {"data": {f"s{i}": search for i in range(count)}}
 
 
 @pytest.fixture
@@ -129,6 +121,103 @@ class TestParsePrNode:
         assert review[0].path == "src/auth/middleware.py"
         assert review[0].line == 45
         assert review[0].author == "bob"
+
+    def test_mergeable_parsed(self, gh: GitHubSync, graphql_response: dict):
+        node = graphql_response["data"]["search"]["nodes"][0]
+        assert gh._parse_pr_node(node).mergeable == "MERGEABLE"
+
+    def test_mergeable_defaults_to_unknown_when_missing(self, gh: GitHubSync):
+        node = {
+            "number": 1, "title": "t", "state": "OPEN", "isDraft": False,
+            "url": "", "createdAt": "", "updatedAt": "", "mergedAt": None,
+            "headRefName": "", "repository": {"nameWithOwner": "a/b"},
+            "author": {"login": "alice"},
+            "reviews": {"nodes": []}, "reviewRequests": {"nodes": []},
+            "commits": {"nodes": []}, "comments": {"nodes": []},
+            "reviewThreads": {"nodes": []},
+        }
+        assert gh._parse_pr_node(node).mergeable == "UNKNOWN"
+
+    def test_requested_reviewers_extracted(self, gh: GitHubSync, graphql_response: dict):
+        # PR #7 in the fixture has a requested reviewer (bob) and no reviews.
+        node = graphql_response["data"]["search"]["nodes"][2]
+        pr = gh._parse_pr_node(node)
+        assert pr.requested_reviewers == ["bob"]
+        assert pr.reviewers == []
+
+    def test_requested_reviewer_deduped_against_existing_reviewers(
+        self, gh: GitHubSync,
+    ):
+        """If a user both reviewed and is re-requested, they belong only in reviewers."""
+        node = {
+            "number": 1, "title": "t", "state": "OPEN", "isDraft": False,
+            "mergeable": "MERGEABLE",
+            "url": "", "createdAt": "", "updatedAt": "", "mergedAt": None,
+            "headRefName": "", "repository": {"nameWithOwner": "a/b"},
+            "author": {"login": "alice"},
+            "reviews": {
+                "nodes": [{"state": "APPROVED", "author": {"login": "bob"}}],
+            },
+            "reviewRequests": {
+                "nodes": [
+                    {"requestedReviewer": {"login": "bob"}},
+                    {"requestedReviewer": {"login": "carol"}},
+                ],
+            },
+            "commits": {"nodes": []}, "comments": {"nodes": []},
+            "reviewThreads": {"nodes": []},
+        }
+        pr = gh._parse_pr_node(node)
+        assert [r.login for r in pr.reviewers] == ["bob"]
+        assert pr.requested_reviewers == ["carol"]
+
+    def test_team_review_request_extracted(self, gh: GitHubSync, graphql_response: dict):
+        # PR #7 in the fixture is requested from user bob and team acme/claims-dev.
+        node = graphql_response["data"]["search"]["nodes"][2]
+        pr = gh._parse_pr_node(node)
+        assert pr.requested_reviewers == ["bob"]
+        assert pr.requested_teams == ["acme/claims-dev"]
+
+    def test_team_slug_without_org(self, gh: GitHubSync):
+        node = {
+            "number": 1, "title": "t", "state": "OPEN", "isDraft": False,
+            "url": "", "createdAt": "", "updatedAt": "", "mergedAt": None,
+            "headRefName": "", "repository": {"nameWithOwner": "a/b"},
+            "author": {"login": "alice"},
+            "reviews": {"nodes": []},
+            "reviewRequests": {
+                "nodes": [{"requestedReviewer": {"slug": "platform"}}],
+            },
+            "commits": {"nodes": []}, "comments": {"nodes": []},
+            "reviewThreads": {"nodes": []},
+        }
+        assert gh._parse_pr_node(node).requested_teams == ["platform"]
+
+    def test_needs_my_review_flag_set_when_requested(
+        self, gh: GitHubSync, graphql_response: dict,
+    ):
+        node = graphql_response["data"]["search"]["nodes"][0]
+        assert gh._parse_pr_node(node, needs_review=True).needs_my_review is True
+        assert gh._parse_pr_node(node).needs_my_review is False
+
+    def test_requested_reviewer_ignores_null_entries(self, gh: GitHubSync):
+        """GraphQL returns null requestedReviewer for team-only requests; skip them."""
+        node = {
+            "number": 1, "title": "t", "state": "OPEN", "isDraft": False,
+            "url": "", "createdAt": "", "updatedAt": "", "mergedAt": None,
+            "headRefName": "", "repository": {"nameWithOwner": "a/b"},
+            "author": {"login": "alice"},
+            "reviews": {"nodes": []},
+            "reviewRequests": {
+                "nodes": [
+                    {"requestedReviewer": None},
+                    {"requestedReviewer": {"login": "carol"}},
+                ],
+            },
+            "commits": {"nodes": []}, "comments": {"nodes": []},
+            "reviewThreads": {"nodes": []},
+        }
+        assert gh._parse_pr_node(node).requested_reviewers == ["carol"]
 
 
 # ---------------------------------------------------------------------------
@@ -273,10 +362,12 @@ class TestWritePullRequestsMd:
 
         # Metadata
         assert "- **Repo**: acme/backend" in content
+        assert "- **Branch**: feature/ERSC-1278-fix-auth" in content
         assert "- **State**: open" in content
         assert "- **Author**: @alice" in content
         assert "- **Review**: APPROVED" in content
         assert "- **CI**: passing" in content
+        assert "- **Mergeable**: UNKNOWN" in content  # default for this fixture
         assert "[View on GitHub](https://github.com/acme/backend/pull/42)" in content
 
         # Reviewers
@@ -332,6 +423,167 @@ class TestWritePullRequestsMd:
 
         assert "### Reviewers" not in content
         assert "### Outstanding Comments" not in content
+
+    def test_mergeable_and_requested_reviewers_roundtrip(
+        self, gh: GitHubSync, tmp_path: Path,
+    ):
+        """New fields written by the sync are recovered by the parser."""
+        from duct.pr import parse_pull_requests_md
+
+        ticket_dir = tmp_path / "ERSC-100-task"
+        ticket_dir.mkdir()
+        (ticket_dir / "orchestrator").mkdir()
+
+        prs = [
+            PullRequest(
+                number=9, title="Conflict demo", repo="acme/backend",
+                state="open", author="alice", is_draft=False,
+                review_status="pending", ci_status="passing",
+                url="https://github.com/acme/backend/pull/9",
+                created_at="2026-03-14T12:00:00Z",
+                updated_at="2026-03-14T12:00:00Z",
+                branch="fix/ERSC-100",
+                requested_reviewers=["bob", "carol"],
+                mergeable="CONFLICTING",
+                author_avatar_url="https://avatars.githubusercontent.com/u/1?v=4",
+            ),
+        ]
+
+        gh._write_pull_requests_md(prs, ticket_dir)
+        content = (ticket_dir / "orchestrator" / "PULL_REQUESTS.md").read_text()
+
+        assert "- **Mergeable**: CONFLICTING" in content
+        assert "- **Requested Reviewers**: @bob, @carol" in content
+        assert (
+            "- **Author Avatar**: https://avatars.githubusercontent.com/u/1?v=4"
+            in content
+        )
+
+        parsed = parse_pull_requests_md(content)
+        assert len(parsed) == 1
+        assert parsed[0].mergeable == "CONFLICTING"
+        assert parsed[0].requested_reviewers == ["bob", "carol"]
+        assert (
+            parsed[0].author_avatar_url
+            == "https://avatars.githubusercontent.com/u/1?v=4"
+        )
+
+    def test_needs_review_and_teams_roundtrip(self, gh: GitHubSync, tmp_path: Path):
+        """needs_my_review and requested_teams survive write -> parse."""
+        from duct.pr import parse_pull_requests_md
+
+        ticket_dir = tmp_path / "ERSC-100-task"
+        ticket_dir.mkdir()
+        (ticket_dir / "orchestrator").mkdir()
+
+        prs = [
+            PullRequest(
+                number=7, title="Team-requested", repo="acme/backend",
+                state="open", author="bob", is_draft=False,
+                review_status="pending", ci_status="passing",
+                url="https://github.com/acme/backend/pull/7",
+                created_at="2026-03-14T12:00:00Z",
+                updated_at="2026-03-14T12:00:00Z", branch="fix/x",
+                needs_my_review=True,
+                requested_teams=["acme/claims-dev", "acme/claims-tech-leads"],
+            ),
+        ]
+        gh._write_pull_requests_md(prs, ticket_dir)
+        content = (ticket_dir / "orchestrator" / "PULL_REQUESTS.md").read_text()
+
+        assert "- **Needs Review**: true" in content
+        assert "- **Requested Teams**: @acme/claims-dev, @acme/claims-tech-leads" in content
+
+        parsed = parse_pull_requests_md(content)[0]
+        assert parsed.needs_my_review is True
+        assert parsed.requested_teams == ["acme/claims-dev", "acme/claims-tech-leads"]
+
+    def test_needs_review_omitted_when_false(self, gh: GitHubSync, tmp_path: Path):
+        ticket_dir = tmp_path / "ERSC-100-task"
+        ticket_dir.mkdir()
+        (ticket_dir / "orchestrator").mkdir()
+        prs = [
+            PullRequest(
+                number=1, title="Mine", repo="acme/backend",
+                state="open", author="alice", is_draft=False,
+                review_status="pending", ci_status="unknown",
+                url="", created_at="", updated_at="", branch="main",
+            ),
+        ]
+        gh._write_pull_requests_md(prs, ticket_dir)
+        content = (ticket_dir / "orchestrator" / "PULL_REQUESTS.md").read_text()
+        assert "Needs Review" not in content
+        assert "Requested Teams" not in content
+
+    def test_empty_requested_reviewers_omits_line(
+        self, gh: GitHubSync, tmp_path: Path,
+    ):
+        ticket_dir = tmp_path / "ERSC-100-task"
+        ticket_dir.mkdir()
+        (ticket_dir / "orchestrator").mkdir()
+
+        prs = [
+            PullRequest(
+                number=1, title="Simple", repo="acme/backend",
+                state="open", author="alice", is_draft=False,
+                review_status="pending", ci_status="unknown",
+                url="", created_at="", updated_at="", branch="main",
+            ),
+        ]
+        gh._write_pull_requests_md(prs, ticket_dir)
+        content = (ticket_dir / "orchestrator" / "PULL_REQUESTS.md").read_text()
+        assert "Requested Reviewers" not in content
+
+
+# ---------------------------------------------------------------------------
+# _search_prs provenance (needs_my_review)
+# ---------------------------------------------------------------------------
+
+
+def _pr_node(number: int, *, author: str = "alice", repo: str = "acme/repo") -> dict:
+    return {
+        "number": number, "title": f"PR {number}", "state": "OPEN",
+        "isDraft": False, "url": f"https://github.com/{repo}/pull/{number}",
+        "createdAt": "2026-03-01T00:00:00Z", "updatedAt": "2026-03-01T00:00:00Z",
+        "mergedAt": None, "headRefName": "main",
+        "repository": {"nameWithOwner": repo}, "author": {"login": author},
+        "reviews": {"nodes": []}, "reviewRequests": {"nodes": []},
+        "commits": {"nodes": []}, "comments": {"nodes": []},
+        "reviewThreads": {"nodes": []},
+    }
+
+
+def _page(*nodes: dict) -> dict:
+    return {
+        "data": {
+            "search": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": list(nodes),
+            }
+        }
+    }
+
+
+class TestSearchPrsProvenance:
+    def test_flag_only_on_review_requested_query(self, gh: GitHubSync, httpx_mock):
+        # Order of queries: author, assignee, review-requested.
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=_page(_pr_node(42)))
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=_page())
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=_page(_pr_node(7)))
+
+        by_number = {pr.number: pr for pr in gh._search_prs()}
+        assert by_number[42].needs_my_review is False
+        assert by_number[7].needs_my_review is True
+
+    def test_flag_ored_when_pr_in_multiple_queries(self, gh: GitHubSync, httpx_mock):
+        # PR 42 surfaces from the author query first, then again from the
+        # review-requested query — the flag must end up True.
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=_page(_pr_node(42)))
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=_page())
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=_page(_pr_node(42)))
+
+        by_number = {pr.number: pr for pr in gh._search_prs()}
+        assert by_number[42].needs_my_review is True
 
 
 # ---------------------------------------------------------------------------
@@ -422,11 +674,37 @@ class TestGraphqlSearch:
         with pytest.raises(AuthError, match="401"):
             gh._graphql_search("type:pr author:alice")
 
-    def test_server_error_raises(self, gh: GitHubSync, httpx_mock):
-        httpx_mock.add_response(url=_GRAPHQL_URL, status_code=500, text="Server Error")
+    def test_server_error_raises_with_body(self, gh: GitHubSync, httpx_mock):
+        httpx_mock.add_response(
+            url=_GRAPHQL_URL, status_code=500, text="upstream timeout"
+        )
 
-        with pytest.raises(SyncError, match="500"):
+        with pytest.raises(SyncError) as exc_info:
             gh._graphql_search("type:pr author:alice")
+
+        msg = str(exc_info.value)
+        assert "500" in msg
+        assert "upstream timeout" in msg
+
+    def test_non_200_with_empty_body_marks_it(self, gh: GitHubSync, httpx_mock):
+        httpx_mock.add_response(url=_GRAPHQL_URL, status_code=503, text="")
+
+        with pytest.raises(SyncError) as exc_info:
+            gh._graphql_search("type:pr author:alice")
+
+        msg = str(exc_info.value)
+        assert "503" in msg
+        assert "<empty body>" in msg
+
+    def test_non_200_body_is_truncated(self, gh: GitHubSync, httpx_mock):
+        long_body = "x" * 2000
+        httpx_mock.add_response(url=_GRAPHQL_URL, status_code=500, text=long_body)
+
+        with pytest.raises(SyncError) as exc_info:
+            gh._graphql_search("type:pr author:alice")
+
+        body_part = str(exc_info.value).split("body: ", 1)[1]
+        assert len(body_part) == 500
 
     def test_graphql_errors_raises(self, gh: GitHubSync, httpx_mock):
         httpx_mock.add_response(
@@ -478,8 +756,10 @@ class TestFullSync:
         # Create ticket directory that matches PR #42 (ERSC-1278 in title and branch)
         _make_ticket_dir(tmp_workspace, "ERSC-1278", "fix-auth")
 
-        # Single batched request returns all 3 query results
-        httpx_mock.add_response(url=_GRAPHQL_URL, json=_batched_response(graphql_response))
+        # One response per query (author / assignee / review-requested)
+        httpx_mock.add_response(
+            url=_GRAPHQL_URL, json=graphql_response, is_reusable=True,
+        )
 
         result = gh.sync(tmp_workspace)
 
@@ -494,6 +774,43 @@ class TestFullSync:
         assert "## #42" in content
         # PR #7 also matches ERSC-1278 via branch name
         assert "## #7" in content
+
+    def test_sync_writes_review_prs_md(
+        self, gh: GitHubSync, httpx_mock, tmp_workspace: Path,
+    ):
+        """A team-requested PR by another author lands in .review_prs.md even
+        though it matches no tracked ticket."""
+        _make_ticket_dir(tmp_workspace, "ERSC-1278", "fix-auth")
+
+        node = _pr_node(31, author="bob", repo="acme/api")
+        node["reviewRequests"]["nodes"] = [
+            {"requestedReviewer": {
+                "slug": "claims-dev", "organization": {"login": "acme"}},
+            },
+        ]
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=_page(node), is_reusable=True)
+
+        result = gh.sync(tmp_workspace)
+        assert result.errors == []
+
+        review_md = tmp_workspace / ".review_prs.md"
+        assert review_md.exists()
+        content = review_md.read_text()
+        assert "## #31" in content
+        assert "- **Needs Review**: true" in content
+        assert "- **Requested Teams**: @acme/claims-dev" in content
+
+    def test_sync_excludes_own_prs_from_review(
+        self, gh: GitHubSync, httpx_mock, tmp_workspace: Path,
+    ):
+        """My own PRs are never review work, even if returned by the query."""
+        _make_ticket_dir(tmp_workspace, "ERSC-1278", "fix-auth")
+        node = _pr_node(50, author="alice")  # alice is the configured username
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=_page(node), is_reusable=True)
+
+        gh.sync(tmp_workspace)
+        content = (tmp_workspace / ".review_prs.md").read_text()
+        assert "## #50" not in content
 
     def test_sync_no_ticket_dirs(self, gh: GitHubSync, tmp_workspace: Path):
         result = gh.sync(tmp_workspace)
@@ -513,7 +830,7 @@ class TestFullSync:
                 }
             }
         }
-        httpx_mock.add_response(url=_GRAPHQL_URL, json=_batched_response(empty_response))
+        httpx_mock.add_response(url=_GRAPHQL_URL, json=empty_response, is_reusable=True)
 
         result = gh.sync(tmp_workspace)
         assert result.tickets_synced == 0
@@ -531,13 +848,36 @@ class TestFullSync:
         assert len(result.errors) == 1
         assert "401" in result.errors[0]
 
+    def test_sync_502_captures_response_body_and_timing(
+        self, gh: GitHubSync, httpx_mock, tmp_workspace: Path,
+    ):
+        """A 502 from GitHub's edge proxy surfaces with the HTML body and the
+        elapsed request time, so the user can tell whether 502s are happening
+        at a consistent timeout."""
+        _make_ticket_dir(tmp_workspace, "ERSC-1278", "fix-auth")
+
+        edge_html = "<html><head><title>502</title></head><body>Bad Gateway</body></html>"
+        httpx_mock.add_response(url=_GRAPHQL_URL, status_code=502, text=edge_html)
+
+        result = gh.sync(tmp_workspace)
+        assert result.tickets_synced == 0
+        assert len(result.errors) == 1
+        err = result.errors[0]
+        assert "502" in err
+        assert "Bad Gateway" in err
+        # Timing is rendered as "after X.Xs"
+        assert re.search(r"after \d+\.\ds", err)
+
     def test_sync_deduplicates_prs(
         self, gh: GitHubSync, httpx_mock, graphql_response: dict, tmp_workspace: Path,
     ):
         _make_ticket_dir(tmp_workspace, "ERSC-1278", "fix-auth")
 
-        # All 3 aliases return the same PRs -- dedup should prevent duplicates
-        httpx_mock.add_response(url=_GRAPHQL_URL, json=_batched_response(graphql_response))
+        # Each of the 3 per-query requests returns the same PRs -- dedup
+        # by repo#number should prevent duplicates in the rendered output.
+        httpx_mock.add_response(
+            url=_GRAPHQL_URL, json=graphql_response, is_reusable=True,
+        )
 
         result = gh.sync(tmp_workspace)
         assert result.tickets_synced == 1

@@ -1,4 +1,4 @@
-"""Tests for the duct init command."""
+"""Tests for the duct init command (hidden scaffold command)."""
 
 from pathlib import Path
 
@@ -9,13 +9,12 @@ from duct.cli.main import cli
 
 
 def test_init_creates_all_files(tmp_path: Path) -> None:
-    """init should create config.yaml, PRIORITY.md, WORKFLOW.md, and .claude/CLAUDE.md."""
+    """init should create config.yaml, WORKFLOW.md, and .claude/CLAUDE.md."""
     runner = CliRunner()
     result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "init"])
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / "config.yaml").exists()
-    assert (tmp_path / "PRIORITY.md").exists()
     assert (tmp_path / "WORKFLOW.md").exists()
     assert (tmp_path / ".claude" / "CLAUDE.md").exists()
 
@@ -27,15 +26,15 @@ def test_init_is_idempotent(tmp_path: Path) -> None:
     # First run — creates files
     runner.invoke(cli, ["--workspace-root", str(tmp_path), "init"])
 
-    # Write custom content to PRIORITY.md
-    priority_path = tmp_path / "PRIORITY.md"
-    custom_content = "# My Custom Priorities\n"
-    priority_path.write_text(custom_content)
+    # Write custom content to WORKFLOW.md
+    workflow_path = tmp_path / "WORKFLOW.md"
+    custom_content = "# My Custom Workflow\n"
+    workflow_path.write_text(custom_content)
 
     # Second run — should not overwrite
     result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "init"])
     assert result.exit_code == 0, result.output
-    assert priority_path.read_text() == custom_content
+    assert workflow_path.read_text() == custom_content
 
 
 def test_init_respects_workspace_root(tmp_path: Path) -> None:
@@ -46,7 +45,7 @@ def test_init_respects_workspace_root(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert (target / "config.yaml").exists()
-    assert (target / "PRIORITY.md").exists()
+    assert (target / "WORKFLOW.md").exists()
 
 
 def test_init_config_yaml_is_valid(tmp_path: Path) -> None:
@@ -61,23 +60,12 @@ def test_init_config_yaml_is_valid(tmp_path: Path) -> None:
     assert "jira" in data
 
 
-def test_init_priority_md_has_expected_content(tmp_path: Path) -> None:
-    """PRIORITY.md should contain the template header and comment."""
-    runner = CliRunner()
-    runner.invoke(cli, ["--workspace-root", str(tmp_path), "init"])
-
-    content = (tmp_path / "PRIORITY.md").read_text()
-    assert "# Priority" in content
-    assert "ticket keys" in content.lower() or "priority order" in content.lower()
-
-
 def test_init_json_output(tmp_path: Path) -> None:
     """init with --json should produce JSON output containing created files."""
     runner = CliRunner()
     result = runner.invoke(cli, ["--json", "--workspace-root", str(tmp_path), "init"])
 
     assert result.exit_code == 0, result.output
-    # JSON mode should produce parseable output
     import json
 
     lines = [line for line in result.output.strip().splitlines() if line.strip()]

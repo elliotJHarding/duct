@@ -1,158 +1,225 @@
-"""Workspace data loading — wraps the duct library for TUI consumption."""
+"""Async data layer wrapping duct API."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import subprocess
 from pathlib import Path
 
-from duct.api import (
-    enumerate_ticket_dirs,
-    find_workspace_root,
-    load_config,
-    orchestrator_dir,
+import duct.api as api
+from duct.agents import Agent, list_agents, load_agent
+from duct.config import WorkspaceConfig, load_config
+from duct.models import (
+    Action, PullRequest, SessionInfo, SourceStatus, SyncResult,
+    Task, TicketDetail, TicketOverview, TicketSummary,
 )
-from duct.markdown import extract_table, parse_frontmatter
+from duct.review import open_in_intellij, prepare_local_review
+from duct.terminal import TerminalAdapter
 
 
-# Orchestrator-authored artifacts (display order)
-AUTHORED_ARTIFACTS = [
-    "BACKGROUND.md",
-    "AC.md",
-    "SPEC.md",
-    "IMPLEMENTATION.md",
-    "VERIFICATION.md",
-    "DEPLOYMENT.md",
-    "QA.md",
-    "ORCHESTRATOR.md",
-]
-
-# Sync snapshot files (display order)
-SYNC_ARTIFACTS = [
-    "TICKET.md",
-    "PULL_REQUESTS.md",
-    "CI.md",
-    "CLAUDE_SESSIONS.md",
-    "WORKSPACE.md",
-]
+_LoadInitialResult = tuple[list[SessionInfo], list[TicketOverview]]
 
 
-@dataclass
-class TicketData:
-    """All displayable data for a single ticket."""
+class DataManager:
+    """Async wrapper around duct API. All methods use @work(thread=True)."""
 
-    key: str
-    summary: str
-    status: str
-    category: str
-    path: Path
-    artifacts: list[str] = field(default_factory=list)
-    repos: list[str] = field(default_factory=list)
-    metadata: dict[str, str] = field(default_factory=dict)
-    ticket_md: str | None = None
+    def __init__(self, root: Path):
+        self.root = root
 
-    @property
-    def status_color(self) -> str:
-        """Map ticket status to a theme color name."""
-        s = self.status.lower()
-        if "progress" in s or "active" in s:
-            return "green"
-        if "done" in s or "closed" in s or "resolved" in s:
-            return "dim"
-        if "testing" in s and "fail" in s:
-            return "red"
-        if "testing" in s or "review" in s or "waiting" in s:
-            return "yellow"
-        return "yellow"  # default for to-do, pending, etc.
+    def load_tickets(self) -> list[TicketSummary]:
+        return api.get_tickets(self.root)
 
+    def load_initial(
+        self,
+        adapter: TerminalAdapter | None = None,
+        filter_mode: str = "focus",
+    ) -> _LoadInitialResult:
+        """Single-pass startup load — sessions and ticket overviews together.
 
-@dataclass
-class WorkspaceData:
-    """Snapshot of all tickets in the workspace."""
+        Avoids the duplicate session-discovery and per-repo git-status
+        sweeps the historical three-call pattern triggered.
+        """
+        return api.load_initial(self.root, adapter=adapter, filter_mode=filter_mode)
 
-    root: Path
-    tickets: list[TicketData] = field(default_factory=list)
+    def load_sessions_staged(
+        self, adapter: TerminalAdapter | None = None,
+    ) -> tuple[list[dict], list[SessionInfo]]:
+        """Phase 1 of the staged load: discover + enrich sessions.
 
+        Returns ``(raw_sessions, sessions)``. The raw dicts are threaded
+        through to ``load_ticket_overviews_staged`` so the second phase
+        skips re-running ``discover_sessions`` and ``apply_overrides``.
+        """
+        from duct import pane_status
+        from duct.session import discover_sessions
+        from duct.terminal import _wezterm_list_panes
 
-def load_ticket(key: str, ticket_dir: Path) -> TicketData:
-    """Load a single ticket's data from disk."""
-    orch = orchestrator_dir(ticket_dir)
+        if adapter is not None and getattr(adapter, "name", "") == "wezterm":
+            _wezterm_list_panes()
+        raw_sessions = discover_sessions()
+        pane_status.apply_overrides(raw_sessions, adapter)
+        api._apply_recency(raw_sessions, self.root)
+        sessions = api._build_session_infos(raw_sessions, self.root)
+        return raw_sessions, sessions
 
-    # Discover artifacts
-    artifacts: list[str] = []
-    for name in AUTHORED_ARTIFACTS + SYNC_ARTIFACTS:
-        if (orch / name).is_file():
-            artifacts.append(name)
+    def load_ticket_overviews_staged(
+        self,
+        adapter: TerminalAdapter | None = None,
+        raw_sessions: list[dict] | None = None,
+        filter_mode: str = "focus",
+    ) -> list[TicketOverview]:
+        """Phase 2 of the staged load: ticket overviews using already-
+        discovered sessions to avoid duplicate work."""
+        return api.get_ticket_overviews(
+            self.root,
+            filter_mode=filter_mode,
+            adapter=adapter,
+            _raw_sessions=raw_sessions,
+        )
 
-    # Discover repo worktrees (non-orchestrator subdirectories)
-    repos: list[str] = []
-    for child in sorted(ticket_dir.iterdir()):
-        if child.is_dir() and child.name not in ("orchestrator", ".git", "__pycache__"):
-            repos.append(child.name)
+    def load_ticket_detail(self, key: str) -> TicketDetail | None:
+        return api.get_ticket_detail(self.root, key)
 
-    # Parse TICKET.md for metadata
-    summary = ""
-    status = ""
-    category = ""
-    metadata: dict[str, str] = {}
-    ticket_md: str | None = None
+    def load_sessions(self, adapter: TerminalAdapter | None = None) -> list[SessionInfo]:
+        return api.get_sessions(self.root, adapter=adapter)
 
-    ticket_path = orch / "TICKET.md"
-    if ticket_path.is_file():
-        ticket_md = ticket_path.read_text(encoding="utf-8")
-        _fm, body = parse_frontmatter(ticket_md)
+    def load_actions(self, key: str) -> list[Action]:
+        return api.get_actions(self.root, key)
 
-        # Extract summary from H1 heading: "# KEY: Summary"
-        for line in body.splitlines():
-            if line.startswith("# "):
-                parts = line[2:].split(":", 1)
-                if len(parts) == 2:
-                    summary = parts[1].strip()
-                break
+    def run_sync(self, force: bool = False) -> list[SyncResult]:
+        return api.trigger_sync(self.root, force=force)
 
-        # Extract metadata table
-        rows = extract_table(body)
-        for row in rows:
-            field_name = row.get("Field", "").strip()
-            value = row.get("Value", "").strip()
-            if field_name and value:
-                metadata[field_name] = value
+    def get_sync_status(self) -> list[SourceStatus]:
+        return api.get_sync_status(self.root)
 
-        status = metadata.get("Status", "")
-        category = metadata.get("Category", "")
+    def resolve_action(
+        self,
+        key: str,
+        action_id: str,
+        approved: bool,
+        feedback: str | None = None,
+    ) -> None:
+        api.resolve_action(self.root, key, action_id, approved, feedback)
 
-    return TicketData(
-        key=key,
-        summary=summary or key,
-        status=status,
-        category=category,
-        path=ticket_dir,
-        artifacts=artifacts,
-        repos=repos,
-        metadata=metadata,
-        ticket_md=ticket_md,
-    )
+    def do_launch_session(self, key: str, repo: str | None, prompt: str | None) -> int:
+        return api.launch_session(self.root, key, repo=repo, prompt=prompt)
 
+    def do_spawn_session(
+        self, adapter: TerminalAdapter, key: str,
+        repo: str | None = None, prompt: str | None = None,
+    ) -> int | None:
+        """Spawn a session in a new terminal pane. Returns pane ID."""
+        return api.spawn_session(adapter, self.root, key, repo=repo, prompt=prompt)
 
-def load_workspace(root: Path | None = None) -> WorkspaceData:
-    """Scan workspace and return all ticket data for display."""
-    if root is None:
-        root = find_workspace_root()
+    def do_launch_session_in_dir(self, cwd: Path, prompt: str | None) -> int:
+        return api.launch_session_in_dir(cwd, prompt=prompt)
 
-    # Validate config exists
-    load_config(root)
+    def load_ticket_overviews(
+        self,
+        filter_mode: str = "focus",
+        adapter: TerminalAdapter | None = None,
+    ) -> list[TicketOverview]:
+        return api.get_ticket_overviews(self.root, filter_mode=filter_mode, adapter=adapter)
 
-    ticket_dirs = enumerate_ticket_dirs(root)
-    tickets = [load_ticket(key, path) for key, path in ticket_dirs]
+    def do_focus_session(self, pid: int) -> bool:
+        return api.focus_session(pid)
 
-    # Sort by key for stable ordering
-    tickets.sort(key=lambda t: t.key)
+    def do_stop_session(self, pid: int) -> bool:
+        return api.stop_session(pid)
 
-    return WorkspaceData(root=root, tickets=tickets)
+    def do_dock_session(
+        self, adapter: TerminalAdapter, tui_pane_id: int, session_pid: int,
+        current_docked_pane: int | None = None,
+    ) -> int | None:
+        return api.dock_session(adapter, tui_pane_id, session_pid, current_docked_pane)
 
+    def do_undock_session(self, adapter: TerminalAdapter, pane_id: int) -> bool:
+        return api.undock_session(adapter, pane_id)
 
-def read_artifact(ticket: TicketData, filename: str) -> str | None:
-    """Read an artifact file's content, returning None if it doesn't exist."""
-    path = orchestrator_dir(ticket.path) / filename
-    if path.is_file():
-        return path.read_text(encoding="utf-8")
-    return None
+    def get_session_preview(self, adapter: TerminalAdapter, session_pid: int) -> str | None:
+        return api.get_session_preview(adapter, session_pid)
+
+    def load_all_actions(self) -> list[tuple[str, Action]]:
+        return api.get_all_actions(self.root)
+
+    def launch_orchestrator(self, ticket_key: str | None = None) -> subprocess.Popen:
+        return api.launch_orchestrator(self.root, ticket_key=ticket_key)
+
+    def load_all_prs(self, filter_mode: str = "focus") -> list[tuple[str, PullRequest]]:
+        return api.get_all_prs(self.root, filter_mode=filter_mode)
+
+    def get_github_username(self) -> str | None:
+        return api.github_username()
+
+    def get_workspace_config(self) -> WorkspaceConfig:
+        return load_config(self.root)
+
+    def do_deep_review(self, pr: PullRequest) -> Path:
+        """Clone-if-needed, check out PR branch, open in IntelliJ. Returns repo path."""
+        cfg = self.get_workspace_config()
+        repo_path = prepare_local_review(cfg, pr)
+        open_in_intellij(repo_path)
+        return repo_path
+
+    def list_agents(self) -> list[Agent]:
+        return list_agents(self.root)
+
+    def load_agent_body(self, name: str) -> str | None:
+        agent = load_agent(self.root, name)
+        return agent.body if agent else None
+
+    def do_post_jira_comment(self, key: str, body: str) -> None:
+        api.post_jira_comment(self.root, key, body)
+
+    def add_task(self, key: str, description: str) -> Task:
+        return api.add_task(self.root, key, description)
+
+    def toggle_task(self, key: str, task_id: str) -> None:
+        api.toggle_task(self.root, key, task_id)
+
+    def delete_task(self, key: str, task_id: str) -> None:
+        api.delete_task(self.root, key, task_id)
+
+    def reorder_task(self, key: str, task_id: str, direction: int) -> None:
+        api.reorder_task(self.root, key, task_id, direction)
+
+    def edit_task(self, key: str, task_id: str, description: str) -> None:
+        api.edit_task(self.root, key, task_id, description)
+
+    def discover_repos(self) -> list[str]:
+        """Return sorted repo names available under configured repoPaths."""
+        return [name for name, _ in api.discover_repos(self.root)]
+
+    def get_repo_candidates(self):
+        """Return local + remote-org RepoCandidate entries."""
+        return api.get_repo_candidates(self.root)
+
+    def list_repo_branches(
+        self, repo_name: str, *, slug: str | None = None,
+    ) -> list[str]:
+        return api.list_repo_branches(self.root, repo_name, slug=slug)
+
+    def suggest_feature_branch(self, key: str) -> str:
+        return api.suggest_feature_branch(self.root, key)
+
+    def do_add_repo(
+        self,
+        key: str,
+        repo_name: str,
+        base_branch: str,
+        feature_branch: str,
+        *,
+        clone_from: str | None = None,
+    ) -> Path:
+        return api.add_repo(
+            self.root, key, repo_name, base_branch, feature_branch,
+            clone_from=clone_from,
+        )
+
+    def load_artifact_content(self, key: str, artifact_name: str) -> str | None:
+        ticket_dir = api.resolve_ticket_dir(self.root, key)
+        if not ticket_dir:
+            return None
+        path = ticket_dir / "orchestrator" / f"{artifact_name}.md"
+        if path.is_file():
+            return path.read_text(errors="ignore")
+        return None

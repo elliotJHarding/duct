@@ -1,15 +1,27 @@
 """Tests for duct.markdown utilities."""
 
+import re
 from pathlib import Path
 
+import pytest
+
 from duct.markdown import (
+    MANAGED_BLOCK_END,
+    MANAGED_BLOCK_START,
     TICKET_KEY_PATTERN,
+    ManagedBlockReseeded,
     atomic_write,
     extract_table,
     generate_frontmatter,
     parse_frontmatter,
+    update_managed_block,
     write_if_changed,
 )
+
+
+def _managed(body: str) -> str:
+    """Wrap *body* in start/end markers with surrounding newlines."""
+    return f"{MANAGED_BLOCK_START}\n{body}\n{MANAGED_BLOCK_END}\n"
 
 
 class TestTicketKeyPattern:
@@ -95,6 +107,65 @@ class TestWriteIfChanged:
         target.write_text("old", encoding="utf-8")
         assert write_if_changed(target, "new") is True
         assert target.read_text() == "new"
+
+
+class TestUpdateManagedBlock:
+    SEED_TAIL = "\n<!-- user notes below -->\n"
+
+    def test_creates_file_when_missing(self, tmp_path: Path):
+        target = tmp_path / "CLAUDE.md"
+        result = update_managed_block(target, _managed("hello"), seed_tail=self.SEED_TAIL)
+        assert result == "created"
+        assert target.read_text() == _managed("hello") + self.SEED_TAIL
+
+    def test_updates_managed_region_preserving_tail(self, tmp_path: Path):
+        target = tmp_path / "CLAUDE.md"
+        target.write_text(_managed("v1") + "\n## My notes\n\nWIP.\n", encoding="utf-8")
+
+        result = update_managed_block(target, _managed("v2"))
+
+        assert result == "updated"
+        assert target.read_text() == _managed("v2") + "\n## My notes\n\nWIP.\n"
+
+    def test_preserves_prefix_before_start_marker(self, tmp_path: Path):
+        target = tmp_path / "CLAUDE.md"
+        target.write_text("preface line\n" + _managed("v1") + "after\n", encoding="utf-8")
+
+        update_managed_block(target, _managed("v2"))
+
+        assert target.read_text() == "preface line\n" + _managed("v2") + "after\n"
+
+    def test_idempotent_when_managed_unchanged(self, tmp_path: Path):
+        target = tmp_path / "CLAUDE.md"
+        managed = _managed("stable")
+        target.write_text(managed + "tail\n", encoding="utf-8")
+
+        result = update_managed_block(target, managed)
+
+        assert result == "updated"
+        assert target.read_text() == managed + "tail\n"
+
+    def test_reseeds_when_end_marker_missing(self, tmp_path: Path):
+        target = tmp_path / "CLAUDE.md"
+        original = "# manual override\n\nno markers here\n"
+        target.write_text(original, encoding="utf-8")
+
+        with pytest.raises(ManagedBlockReseeded) as exc_info:
+            update_managed_block(target, _managed("fresh"), seed_tail=self.SEED_TAIL)
+
+        backup = exc_info.value.backup
+        assert exc_info.value.original == target
+        assert backup.exists()
+        assert backup.read_text() == original
+        assert re.fullmatch(r"CLAUDE\.md\.\d{8}T\d{6}Z\.bak", backup.name)
+        assert target.read_text() == _managed("fresh") + self.SEED_TAIL
+
+    def test_reseeds_when_only_end_marker_present(self, tmp_path: Path):
+        target = tmp_path / "CLAUDE.md"
+        target.write_text(f"orphan\n{MANAGED_BLOCK_END}\nother\n", encoding="utf-8")
+
+        with pytest.raises(ManagedBlockReseeded):
+            update_managed_block(target, _managed("fresh"))
 
 
 class TestExtractTable:

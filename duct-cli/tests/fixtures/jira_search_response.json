@@ -27,6 +27,7 @@
         "customfield_10020": [
           {"name": "Sprint 5", "state": "active", "id": 100}
         ],
+        "customfield_11704": {"value": "ERS", "id": "11800"},
         "fixVersions": [{"name": "1.2.0", "id": "10100"}],
         "components": [{"name": "Backend", "id": "10200"}],
         "labels": ["security", "mvp"],
@@ -98,6 +99,7 @@
         "parent": null,
         "customfield_10014": "PROJ-50",
         "customfield_10020": null,
+        "customfield_11704": null,
         "fixVersions": [],
         "components": [],
         "labels": [],

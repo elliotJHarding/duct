@@ -1,0 +1,19 @@
+# Synthetic fixture — Claude Code actively thinking inside plan mode.
+# Both the spinner footer AND the plan-mode banner are visible. This is the
+# critical case that proves mode and activity are orthogonal dimensions:
+# activity == "working" but mode == "plan".
+#
+# The spinner glyph ANIMATES (cycles through ✻ · ✶ etc.) so the anchor is
+# the ellipsis + parenthesised duration, not the glyph itself.
+#
+# Expected: classify_activity -> "working", detect_mode -> "plan"
+
+⏺ Analysing the call graph in src/duct/session.py
+
+· Pondering… (42s · ↓ 891 tokens · thought for 4s)
+
+─────────────────────────────────────────────────────────────────────────────── session ──
+❯
+───────────────────────────────────────────────────────────────────────────────────────────
+  hardinge@Mac ~/workspace main
+  ⏸ plan mode on (shift+tab to cycle)

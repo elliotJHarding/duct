@@ -1,0 +1,58 @@
+  ⎿  Added 13 lines, removed 3 lines                                                                                                        
+      38                                                                                                                                    
+      39  # Activity anchors (ordered: waiting > working, because approval prompts can                                                      
+      40  # briefly coexist with spinner text from the turn that triggered them).                                                           
+      41 +#                                                                                                                                 
+      42 +# Claude Code's approval prompts have stable, multi-word phrasing that's                                                          
+      43 +# unlikely to false-trigger on echoed shell output or message text:                                                               
+      44  _WAITING_ANCHORS = (                                                                                                              
+      45      "Do you want to proceed?",                                                                                                    
+      46      "Do you want to make this edit",                                                                                              
+      44 -    "Would you like to",                                                                                                        
+      47  )
+      46 -_WORKING_ANCHOR = "to interrupt)"  # matches "(esc to interrupt)" and variants                                             
+      48  
+      48 -# Plan-mode banner anchor. Claude Code renders a persistent footer like                                                    
+      49 +# Working spinner footer. Claude Code renders something like:                                                              
+      50 +#     ✻ Sublimating… (2m 17s · ↓ 557 tokens · thought for 23s)                                                             
+      51 +# where the glyph at the start is ANIMATED (cycles through ✻/·/etc.) and                                                   
+      52 +# the verb rotates. The stable part is the ellipsis followed by parenthesised                                              
+      53 +# metadata that starts with a duration like "(0s", "(38s", "(2m". The "done"                                               
+      54 +# variant ("✻ Crunched for 14m 39s") has neither the ellipsis nor the paren,                                               
+      55 +# so it won't match.                                                                                                       
+      56 +_WORKING_RE = re.compile(r"…\s*\(\d+[ms]\b")                                                                               
+      57 +                                                                                                                           
+      58 +# Plan-mode banner. Claude Code renders a persistent footer like                                                           
+      59  # "⏸ plan mode on (shift+tab to cycle)" near the input box while plan mode
+      60  # is active. Match case-insensitively on the stable substring.
+      61  _PLAN_ANCHOR = "plan mode on"
+
+⏺ Update(src/duct/pane_status.py)      
+  ⎿  Added 1 line, removed 1 line
+      90      tail = _tail(text)              
+      91      if any(anchor in tail for anchor in _WAITING_ANCHORS):
+      92          return "waiting"                                                                                                          
+      93 -    if _WORKING_ANCHOR in tail:                                                                                                   
+      93 +    if _WORKING_RE.search(tail):                                                                                                  
+      94          return "working"                                                                                                          
+      95      return None                                                                                                                   
+      96                                                                                                                                    
+                                                                                                                                            
+⏺ Now I need to save a real captured pane as a canonical fixture and update the synthetic ones. Let me grab a fresh capture of an active  
+  session and save it verbatim.
+                                              
+⏺ Bash(wezterm cli get-text --pane-id 6 2>/dev/null > /tmp/working_capture.txt; wc -l /tmp/working_capture.txt; echo; echo "--- tail ---";
+      tail -15 /tmp/working_captur…)                                                                                                        
+  ⎿  Running…                                                                                                                               
+                                                                                                                                            
+✶ Sublimating… (3m 30s · ↓ 1.3k tokens)                                                                                                     
+                                                                                                                                            
+● How is Claude doing this session? (optional)                                                                                              
+  1: Bad    2: Fine   3: Good   0: Dismiss                                                                                                  
+                                                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────── wezterm-pane-session-status ──   n  ____  n 
+❯                                                                                                                                | |@  @| |
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────   |_|    |_|
+  hardinge@Mac \~/workspace/workflow/duct/duct-cli main                                                                            |    |
+  ⏵⏵ bypass permissions on (shift+tab to cycle)                                                                                   Pithwick
+

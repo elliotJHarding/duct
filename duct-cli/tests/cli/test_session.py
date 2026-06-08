@@ -11,16 +11,21 @@ import pytest
 from click.testing import CliRunner
 
 from duct.cli.main import cli
-from duct.cli.session_cmd import (
+from duct.session import (
+    apply_recency_decoration,
+    apply_recency_status,
+    discover_sessions,
+    extract_transcript_info,
+    infer_session_status,
+    is_pid_alive,
+    match_session_ticket,
     _decode_project_path,
-    _discover_sessions,
-    _extract_transcript_info,
-    _focus_terminal_tab,
-    _get_terminal_title,
-    _get_tty,
     _has_active_children,
-    _infer_session_status,
-    _match_session_ticket,
+)
+from duct.terminal import (
+    focus_terminal_tab,
+    get_terminal_title,
+    get_tty,
 )
 
 
@@ -38,7 +43,7 @@ def test_decode_project_path():
 
 
 # ---------------------------------------------------------------------------
-# _extract_transcript_info
+# extract_transcript_info
 # ---------------------------------------------------------------------------
 
 
@@ -50,7 +55,7 @@ def test_extract_transcript_info_basic(tmp_path: Path):
     ]
     transcript.write_text("\n".join(lines))
 
-    info = _extract_transcript_info(transcript)
+    info = extract_transcript_info(transcript)
 
     assert info["started_at"] == "2025-01-01T00:00:00Z"
     assert info["topic"] == "Fix the bug"
@@ -62,7 +67,7 @@ def test_extract_transcript_info_empty_file(tmp_path: Path):
     transcript = tmp_path / "session.jsonl"
     transcript.write_text("")
 
-    info = _extract_transcript_info(transcript)
+    info = extract_transcript_info(transcript)
 
     assert info == {}
 
@@ -84,11 +89,11 @@ def test_discover_sessions_uses_terminal_title(tmp_path: Path):
     }))
 
     with (
-        patch("duct.cli.session_cmd._is_pid_alive", return_value=True),
-        patch("duct.cli.session_cmd._get_tty", return_value="ttys042"),
-        patch("duct.cli.session_cmd._get_terminal_title", return_value="fix-auth-bug"),
+        patch("duct.session.is_pid_alive", return_value=True),
+        patch("duct.terminal.get_ttys", return_value={77777: "ttys042"}),
+        patch("duct.terminal.get_terminal_title", return_value="fix-auth-bug"),
     ):
-        sessions = _discover_sessions(claude_dir=tmp_path, lookback_hours=9999)
+        sessions = discover_sessions(claude_dir=tmp_path, lookback_hours=9999)
 
     matched = [s for s in sessions if s["session_id"] == "term-title-sess"]
     assert len(matched) == 1
@@ -112,11 +117,11 @@ def test_discover_sessions_falls_back_to_transcript_topic(tmp_path: Path):
     }))
 
     with (
-        patch("duct.cli.session_cmd._is_pid_alive", return_value=True),
-        patch("duct.cli.session_cmd._get_tty", return_value="ttys042"),
-        patch("duct.cli.session_cmd._get_terminal_title", return_value=None),
+        patch("duct.session.is_pid_alive", return_value=True),
+        patch("duct.terminal.get_tty", return_value="ttys042"),
+        patch("duct.terminal.get_terminal_title", return_value=None),
     ):
-        sessions = _discover_sessions(claude_dir=tmp_path, lookback_hours=9999)
+        sessions = discover_sessions(claude_dir=tmp_path, lookback_hours=9999)
 
     matched = [s for s in sessions if s["session_id"] == "fallback-sess"]
     assert len(matched) == 1
@@ -129,7 +134,7 @@ def test_get_terminal_title_returns_none_on_error():
         patch("shutil.which", return_value=None),
         patch("platform.system", return_value="Linux"),
     ):
-        assert _get_terminal_title("ttys042") is None
+        assert get_terminal_title("ttys042") is None
 
 
 def test_extract_transcript_info_content_blocks(tmp_path: Path):
@@ -149,7 +154,7 @@ def test_extract_transcript_info_content_blocks(tmp_path: Path):
     ]
     transcript.write_text("\n".join(lines))
 
-    info = _extract_transcript_info(transcript)
+    info = extract_transcript_info(transcript)
 
     assert info["topic"] == "Implement feature X"
     assert info["recent_messages"][0]["text"] == "Implement feature X"
@@ -157,7 +162,7 @@ def test_extract_transcript_info_content_blocks(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# _discover_sessions — PID files
+# discover_sessions — PID files
 # ---------------------------------------------------------------------------
 
 
@@ -167,8 +172,8 @@ def test_discover_sessions_pid_files(tmp_path: Path):
     data = {"sessionId": "abc123", "cwd": "/some/path", "startTime": "2025-01-01T00:00:00Z"}
     (sessions_dir / "12345.json").write_text(json.dumps(data))
 
-    with patch("duct.cli.session_cmd._is_pid_alive", return_value=True):
-        sessions = _discover_sessions(claude_dir=tmp_path)
+    with patch("duct.session.is_pid_alive", return_value=True):
+        sessions = discover_sessions(claude_dir=tmp_path)
 
     assert len(sessions) == 1
     s = sessions[0]
@@ -184,15 +189,15 @@ def test_discover_sessions_dead_pid(tmp_path: Path):
     data = {"sessionId": "dead1", "cwd": "/path", "startTime": "2025-01-01T00:00:00Z"}
     (sessions_dir / "99999.json").write_text(json.dumps(data))
 
-    with patch("duct.cli.session_cmd._is_pid_alive", return_value=False):
-        sessions = _discover_sessions(claude_dir=tmp_path)
+    with patch("duct.session.is_pid_alive", return_value=False):
+        sessions = discover_sessions(claude_dir=tmp_path)
 
     assert sessions[0]["status"] == "terminated"
     assert sessions[0]["alive"] is False
 
 
 # ---------------------------------------------------------------------------
-# _discover_sessions — transcripts
+# discover_sessions — transcripts
 # ---------------------------------------------------------------------------
 
 
@@ -205,7 +210,7 @@ def test_discover_sessions_transcripts(tmp_path: Path):
     ]
     transcript.write_text("\n".join(lines))
 
-    sessions = _discover_sessions(claude_dir=tmp_path, lookback_hours=9999)
+    sessions = discover_sessions(claude_dir=tmp_path, lookback_hours=9999)
 
     assert len(sessions) == 1
     s = sessions[0]
@@ -231,8 +236,8 @@ def test_discover_sessions_merge_pid_and_transcript(tmp_path: Path):
     ]
     transcript.write_text("\n".join(lines))
 
-    with patch("duct.cli.session_cmd._is_pid_alive", return_value=True):
-        sessions = _discover_sessions(claude_dir=tmp_path, lookback_hours=9999)
+    with patch("duct.session.is_pid_alive", return_value=True):
+        sessions = discover_sessions(claude_dir=tmp_path, lookback_hours=9999)
 
     assert len(sessions) == 1
     assert sessions[0]["topic"] == "My topic"
@@ -250,24 +255,24 @@ def test_discover_sessions_lookback_cutoff(tmp_path: Path):
     import os
     os.utime(transcript, (old_time, old_time))
 
-    sessions = _discover_sessions(claude_dir=tmp_path, lookback_hours=0)
+    sessions = discover_sessions(claude_dir=tmp_path, lookback_hours=0)
 
     assert len(sessions) == 0
 
 
 # ---------------------------------------------------------------------------
-# _match_session_ticket
+# match_session_ticket
 # ---------------------------------------------------------------------------
 
 
 def test_match_session_ticket_found():
     session = {"cwd": "/workspace/PROJ-123-feature"}
-    assert _match_session_ticket(session, {"PROJ-123", "OTHER-1"}) == "PROJ-123"
+    assert match_session_ticket(session, {"PROJ-123", "OTHER-1"}) == "PROJ-123"
 
 
 def test_match_session_ticket_no_match():
     session = {"cwd": "/workspace/unrelated"}
-    assert _match_session_ticket(session, {"PROJ-123"}) is None
+    assert match_session_ticket(session, {"PROJ-123"}) is None
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +311,7 @@ def test_session_list_no_sessions(tmp_path: Path):
     _init_workspace(tmp_path)
     runner = CliRunner()
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=[]):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=[]):
         result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "session", "list"])
 
     assert result.exit_code == 0, result.output
@@ -317,7 +322,7 @@ def test_session_list_json(tmp_path: Path):
     _init_workspace(tmp_path)
     runner = CliRunner()
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=_mock_sessions()):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=_mock_sessions()):
         result = runner.invoke(
             cli, ["--json", "--workspace-root", str(tmp_path), "session", "list", "--all"]
         )
@@ -366,7 +371,7 @@ def test_session_list_json_grouped_by_ticket(tmp_path: Path):
         },
     ]
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=sessions):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=sessions):
         result = runner_invoke_json(
             tmp_path, ["session", "list", "--all"]
         )
@@ -390,7 +395,7 @@ def test_session_list_filters_terminated_by_default(tmp_path: Path):
     _init_workspace(tmp_path)
     runner = CliRunner()
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=_mock_sessions()):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=_mock_sessions()):
         result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "session", "list"])
 
     assert result.exit_code == 0, result.output
@@ -403,7 +408,7 @@ def test_session_list_all_shows_terminated(tmp_path: Path):
     _init_workspace(tmp_path)
     runner = CliRunner()
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=_mock_sessions()):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=_mock_sessions()):
         result = runner.invoke(
             cli, ["--workspace-root", str(tmp_path), "session", "list", "--all"]
         )
@@ -422,7 +427,7 @@ def test_session_show_found(tmp_path: Path):
     _init_workspace(tmp_path)
     runner = CliRunner()
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=_mock_sessions()):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=_mock_sessions()):
         result = runner.invoke(
             cli, ["--workspace-root", str(tmp_path), "session", "show", "active"]
         )
@@ -435,7 +440,7 @@ def test_session_show_not_found(tmp_path: Path):
     _init_workspace(tmp_path)
     runner = CliRunner()
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=_mock_sessions()):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=_mock_sessions()):
         result = runner.invoke(
             cli, ["--workspace-root", str(tmp_path), "session", "show", "nonexistent"]
         )
@@ -444,7 +449,7 @@ def test_session_show_not_found(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# _infer_session_status
+# infer_session_status
 # ---------------------------------------------------------------------------
 
 
@@ -461,7 +466,7 @@ def _assistant_entry(stop_reason, content=None):
 def test_infer_status_end_turn(tmp_path: Path):
     t = tmp_path / "s.jsonl"
     t.write_text(_assistant_entry("end_turn"))
-    assert _infer_session_status(t) == "ready"
+    assert infer_session_status(t) == "ready"
 
 
 def test_infer_status_tool_use_ask_user(tmp_path: Path):
@@ -471,7 +476,7 @@ def test_infer_status_tool_use_ask_user(tmp_path: Path):
         {"type": "tool_use", "name": "AskUserQuestion", "id": "x", "input": {}},
     ]
     t.write_text(_assistant_entry("tool_use", content))
-    assert _infer_session_status(t) == "waiting"
+    assert infer_session_status(t) == "waiting"
 
 
 def test_infer_status_tool_use_exit_plan(tmp_path: Path):
@@ -481,17 +486,21 @@ def test_infer_status_tool_use_exit_plan(tmp_path: Path):
         {"type": "tool_use", "name": "ExitPlanMode", "id": "x", "input": {}},
     ]
     t.write_text(_assistant_entry("tool_use", content))
-    assert _infer_session_status(t) == "ready"
+    assert infer_session_status(t) == "ready"
 
 
 def test_infer_status_tool_use_enter_plan(tmp_path: Path):
+    """EnterPlanMode is an ordinary tool call — status is `working`. The
+    orthogonal plan-mode dimension lives on SessionInfo.mode and is sourced
+    from pane-text inspection (see duct.pane_status), not from the transcript.
+    """
     t = tmp_path / "s.jsonl"
     content = [
         {"type": "text", "text": "Let me plan this out"},
         {"type": "tool_use", "name": "EnterPlanMode", "id": "x", "input": {}},
     ]
     t.write_text(_assistant_entry("tool_use", content))
-    assert _infer_session_status(t) == "planning"
+    assert infer_session_status(t) == "working"
 
 
 def test_infer_status_tool_use_other(tmp_path: Path):
@@ -500,7 +509,77 @@ def test_infer_status_tool_use_other(tmp_path: Path):
         {"type": "tool_use", "name": "Bash", "id": "x", "input": {"command": "ls"}},
     ]
     t.write_text(_assistant_entry("tool_use", content))
-    assert _infer_session_status(t) == "working"
+    assert infer_session_status(t) == "working"
+
+
+# ---------------------------------------------------------------------------
+# discover_sessions idle gate (working <-> waiting refinement)
+# ---------------------------------------------------------------------------
+
+
+def _alive_session_with_status(tmp_path: Path, content: list, *, pid: int = 11111) -> Path:
+    """Create a PID file + matching transcript whose last assistant message
+    carries ``content`` (a tool_use block list), so ``infer_session_status``
+    classifies it. Returns the claude_dir to pass to ``discover_sessions``.
+    """
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir()
+    (sessions_dir / f"{pid}.json").write_text(
+        json.dumps({"sessionId": "sid", "cwd": "/workspace", "startTime": "2025-01-01T00:00:00Z"})
+    )
+    project_dir = tmp_path / "projects" / "Users-workspace"
+    project_dir.mkdir(parents=True)
+    (project_dir / "sid.jsonl").write_text(_assistant_entry("tool_use", content))
+    return tmp_path
+
+
+_BASH_TOOL = [{"type": "tool_use", "name": "Bash", "id": "x", "input": {"command": "ls"}}]
+_ASK_USER = [{"type": "tool_use", "name": "AskUserQuestion", "id": "x", "input": {}}]
+
+
+def test_idle_gate_active_turn_keeps_working(tmp_path: Path):
+    """A working session whose transcript is momentarily quiet stays `working`
+    while its caffeinate keep-awake is alive — the mid-step quiet that used to
+    flap it to `waiting`."""
+    claude_dir = _alive_session_with_status(tmp_path, _BASH_TOOL)
+    with patch("duct.session.is_pid_alive", return_value=True), \
+         patch("duct.session._transcript_is_idle", return_value=True), \
+         patch("duct.session._has_active_children", return_value=True):
+        sessions = discover_sessions(claude_dir=claude_dir, lookback_hours=9999)
+    assert sessions[0]["status"] == "working"
+
+
+def test_idle_gate_quiet_and_no_active_turn_becomes_waiting(tmp_path: Path):
+    """A working session that is quiet AND has no active turn (no caffeinate)
+    is genuinely blocked for input — demote to `waiting`."""
+    claude_dir = _alive_session_with_status(tmp_path, _BASH_TOOL)
+    with patch("duct.session.is_pid_alive", return_value=True), \
+         patch("duct.session._transcript_is_idle", return_value=True), \
+         patch("duct.session._has_active_children", return_value=False):
+        sessions = discover_sessions(claude_dir=claude_dir, lookback_hours=9999)
+    assert sessions[0]["status"] == "waiting"
+
+
+def test_idle_gate_fresh_transcript_stays_working(tmp_path: Path):
+    """A working session actively writing its transcript stays `working`
+    without consulting the active-turn signal."""
+    claude_dir = _alive_session_with_status(tmp_path, _BASH_TOOL)
+    with patch("duct.session.is_pid_alive", return_value=True), \
+         patch("duct.session._transcript_is_idle", return_value=False), \
+         patch("duct.session._has_active_children", return_value=False):
+        sessions = discover_sessions(claude_dir=claude_dir, lookback_hours=9999)
+    assert sessions[0]["status"] == "working"
+
+
+def test_idle_gate_waiting_with_active_turn_resumes_working(tmp_path: Path):
+    """An AskUserQuestion that the user has already answered presents as
+    `waiting` from the transcript; an active turn means Claude has resumed,
+    so it flips back to `working`."""
+    claude_dir = _alive_session_with_status(tmp_path, _ASK_USER)
+    with patch("duct.session.is_pid_alive", return_value=True), \
+         patch("duct.session._has_active_children", return_value=True):
+        sessions = discover_sessions(claude_dir=claude_dir, lookback_hours=9999)
+    assert sessions[0]["status"] == "working"
 
 
 def test_infer_status_ask_user_user_responded(tmp_path: Path):
@@ -515,27 +594,110 @@ def test_infer_status_ask_user_user_responded(tmp_path: Path):
         json.dumps({"type": "user", "message": {"content": "Option A"}}),
     ]
     t.write_text("\n".join(lines))
-    assert _infer_session_status(t) == "ready"
+    assert infer_session_status(t) == "ready"
 
 
 def test_infer_status_null_stop_reason(tmp_path: Path):
     t = tmp_path / "s.jsonl"
     entry = {"type": "assistant", "message": {"content": "generating..."}, "stop_reason": None}
     t.write_text(json.dumps(entry))
-    assert _infer_session_status(t) == "working"
+    assert infer_session_status(t) == "working"
 
 
 def test_infer_status_no_assistant_message(tmp_path: Path):
     t = tmp_path / "s.jsonl"
     entry = {"type": "user", "message": {"content": "hello"}}
     t.write_text(json.dumps(entry))
-    assert _infer_session_status(t) == "working"
+    assert infer_session_status(t) == "working"
 
 
 def test_infer_status_empty_file(tmp_path: Path):
     t = tmp_path / "s.jsonl"
     t.write_text("")
-    assert _infer_session_status(t) == "working"
+    assert infer_session_status(t) == "working"
+
+
+# ---------------------------------------------------------------------------
+# apply_recency_status / apply_recency_decoration
+# ---------------------------------------------------------------------------
+
+
+from datetime import datetime, timedelta, timezone
+
+
+_NOW = datetime(2026, 5, 14, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _iso(offset_seconds: int) -> str:
+    return (_NOW - timedelta(seconds=offset_seconds)).isoformat()
+
+
+def test_recency_status_ready_within_done_window_becomes_done():
+    assert apply_recency_status(
+        "ready", _iso(60), now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    ) == "done"
+
+
+def test_recency_status_ready_just_past_done_window_stays_ready():
+    assert apply_recency_status(
+        "ready", _iso(1800), now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    ) == "ready"
+
+
+def test_recency_status_ready_past_stale_threshold_becomes_stale():
+    assert apply_recency_status(
+        "ready", _iso(18000), now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    ) == "stale"
+
+
+@pytest.mark.parametrize("status", ["working", "waiting", "terminated"])
+def test_recency_status_non_ready_passes_through(status: str):
+    assert apply_recency_status(
+        status, _iso(60), now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    ) == status
+    assert apply_recency_status(
+        status, _iso(99999), now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    ) == status
+
+
+def test_recency_status_empty_timestamp_passes_through():
+    assert apply_recency_status(
+        "ready", "", now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    ) == "ready"
+
+
+def test_recency_status_malformed_timestamp_passes_through():
+    assert apply_recency_status(
+        "ready", "not-a-timestamp", now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    ) == "ready"
+
+
+def test_recency_status_naive_timestamp_assumed_utc():
+    naive_iso = (_NOW - timedelta(seconds=60)).replace(tzinfo=None).isoformat()
+    assert apply_recency_status(
+        "ready", naive_iso, now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    ) == "done"
+
+
+def test_recency_decoration_mutates_in_place():
+    sessions = [
+        {"status": "ready", "last_activity": _iso(60)},
+        {"status": "ready", "last_activity": _iso(18000)},
+        {"status": "working", "last_activity": _iso(60)},
+    ]
+    apply_recency_decoration(
+        sessions, now=_NOW,
+        done_window_seconds=900, stale_after_seconds=14400,
+    )
+    assert [s["status"] for s in sessions] == ["done", "stale", "working"]
 
 
 # ---------------------------------------------------------------------------
@@ -655,6 +817,29 @@ def test_session_start_skip_permissions_requires_sandbox(tmp_path: Path):
     assert "sandbox" in result.output.lower()
 
 
+def test_session_start_uses_config_extra_args(tmp_path: Path):
+    (tmp_path / "config.yaml").write_text(
+        "workspace:\n  root: .\nsession:\n  extraArgs:\n    - '--model'\n    - 'sonnet'\n"
+    )
+    ticket_dir = tmp_path / "PROJ-1-feature"
+    (ticket_dir / "orchestrator").mkdir(parents=True)
+
+    runner = CliRunner()
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/claude"),
+        patch("duct.cli.session_cmd.subprocess.run") as mock_run,
+    ):
+        result = runner.invoke(
+            cli, ["--workspace-root", str(tmp_path), "session", "start", "PROJ-1"],
+        )
+
+    assert result.exit_code == 0, result.output
+    cmd = mock_run.call_args[0][0]
+    assert "--model" in cmd
+    assert "sonnet" in cmd
+
+
 def test_session_start_missing_claude_binary(tmp_path: Path):
     _init_workspace(tmp_path)
     # Create a ticket directory so we get past the first check
@@ -684,9 +869,9 @@ def test_session_jump_activates_tab(tmp_path: Path):
     sessions = [_mock_sessions()[0]]  # alive session
 
     with (
-        patch("duct.cli.session_cmd._discover_sessions", return_value=sessions),
-        patch("duct.cli.session_cmd._get_tty", return_value="ttys026"),
-        patch("duct.cli.session_cmd._focus_terminal_tab", return_value=True),
+        patch("duct.cli.session_cmd.discover_sessions", return_value=sessions),
+        patch("duct.cli.session_cmd.get_tty", return_value="ttys026"),
+        patch("duct.cli.session_cmd.focus_terminal_tab", return_value=True),
     ):
         result = runner.invoke(
             cli, ["--workspace-root", str(tmp_path), "session", "jump", "active"]
@@ -703,7 +888,7 @@ def test_session_jump_not_alive(tmp_path: Path):
 
     sessions = [_mock_sessions()[1]]  # terminated session
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=sessions):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=sessions):
         result = runner.invoke(
             cli, ["--workspace-root", str(tmp_path), "session", "jump", "dead"]
         )
@@ -719,8 +904,8 @@ def test_session_jump_no_tty(tmp_path: Path):
     sessions = [_mock_sessions()[0]]
 
     with (
-        patch("duct.cli.session_cmd._discover_sessions", return_value=sessions),
-        patch("duct.cli.session_cmd._get_tty", return_value=None),
+        patch("duct.cli.session_cmd.discover_sessions", return_value=sessions),
+        patch("duct.cli.session_cmd.get_tty", return_value=None),
     ):
         result = runner.invoke(
             cli, ["--workspace-root", str(tmp_path), "session", "jump", "active"]
@@ -738,9 +923,9 @@ def test_session_jump_no_terminal(tmp_path: Path):
     sessions = [_mock_sessions()[0]]
 
     with (
-        patch("duct.cli.session_cmd._discover_sessions", return_value=sessions),
-        patch("duct.cli.session_cmd._get_tty", return_value="ttys026"),
-        patch("duct.cli.session_cmd._focus_terminal_tab", return_value=False),
+        patch("duct.cli.session_cmd.discover_sessions", return_value=sessions),
+        patch("duct.cli.session_cmd.get_tty", return_value="ttys026"),
+        patch("duct.cli.session_cmd.focus_terminal_tab", return_value=False),
     ):
         result = runner.invoke(
             cli, ["--workspace-root", str(tmp_path), "session", "jump", "active"]
@@ -755,7 +940,7 @@ def test_session_jump_not_found(tmp_path: Path):
     _init_workspace(tmp_path)
     runner = CliRunner()
 
-    with patch("duct.cli.session_cmd._discover_sessions", return_value=_mock_sessions()):
+    with patch("duct.cli.session_cmd.discover_sessions", return_value=_mock_sessions()):
         result = runner.invoke(
             cli, ["--workspace-root", str(tmp_path), "session", "jump", "nonexistent"]
         )
@@ -771,5 +956,5 @@ def test_session_jump_not_found(tmp_path: Path):
 
 def test_has_active_children_returns_false_on_error():
     """Error during subprocess call should return False, not raise."""
-    with patch("duct.cli.session_cmd.subprocess.run", side_effect=OSError("nope")):
+    with patch("duct.session.subprocess.run", side_effect=OSError("nope")):
         assert _has_active_children(99999) is False

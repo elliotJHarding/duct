@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import sys
@@ -13,83 +12,12 @@ import click
 from duct.cli.output import error, output, spinner, success
 from duct.cli.resolve import resolve_root
 from duct.config import ConfigError, load_config
-from duct.prompts import load_prompt
-
-_ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash"]
-
-
-def _build_prompt(ticket_key: str | None) -> str:
-    """Build the -p prompt for the orchestrator session."""
-    ticket_focus = f"\nFocus this session on ticket {ticket_key}." if ticket_key else ""
-    return load_prompt("orchestrator", ticket_focus=ticket_focus)
-
-
-def _format_tool_use(content_block: dict) -> str | None:
-    """Format a tool_use content block into a concise one-liner."""
-    name = content_block.get("name", "")
-    inp = content_block.get("input", {})
-
-    # Pick the most informative input field for common tools.
-    detail = ""
-    if name in ("Read", "Write", "Edit"):
-        detail = inp.get("file_path", "")
-    elif name == "Glob":
-        detail = inp.get("pattern", "")
-    elif name == "Grep":
-        pattern = inp.get("pattern", "")
-        path = inp.get("path", "")
-        detail = f"{pattern}" + (f" in {path}" if path else "")
-    elif name == "Bash":
-        cmd = inp.get("command", "")
-        detail = cmd[:80] + ("..." if len(cmd) > 80 else "")
-    else:
-        # Generic: show first string value
-        for v in inp.values():
-            if isinstance(v, str):
-                detail = v[:80]
-                break
-
-    return f"[dim]  [tool][/dim] {name}  {detail}"
-
-
-def _format_stream_event(line: str) -> str | None:
-    """Parse one NDJSON line and return a formatted string, or None to skip."""
-    try:
-        event = json.loads(line)
-    except (json.JSONDecodeError, ValueError):
-        return None
-
-    etype = event.get("type")
-
-    if etype == "system" and event.get("subtype") == "init":
-        model = event.get("model", "unknown")
-        return f"[dim]  [init] model={model}[/dim]"
-
-    if etype == "assistant":
-        contents = event.get("message", {}).get("content", [])
-        parts: list[str] = []
-        for block in contents:
-            btype = block.get("type")
-            if btype == "tool_use":
-                formatted = _format_tool_use(block)
-                if formatted:
-                    parts.append(formatted)
-            elif btype == "text":
-                text = block.get("text", "").strip()
-                if text:
-                    if len(text) > 200:
-                        text = text[:200] + "..."
-                    parts.append(f"  [text] {text}")
-        if parts:
-            return "\n".join(parts)
-
-    if etype == "result":
-        duration = event.get("duration_seconds", 0)
-        cost = event.get("cost_usd", 0)
-        turns = event.get("num_turns", 0)
-        return f"[bold]  [done] {turns} turns, {duration:.1f}s, ${cost:.2f}[/bold]"
-
-    return None
+from duct.orchestrator import (
+    ALLOWED_TOOLS,
+    RunRecorder,
+    build_prompt,
+    format_stream_event,
+)
 
 
 @click.command()
@@ -153,8 +81,8 @@ def orchestrate(ctx: click.Context, ticket_key: str | None, dry_run: bool, pre_s
         ctx.exit(1)
         return
 
-    allowed_tools = _ALLOWED_TOOLS
-    prompt = _build_prompt(ticket_key)
+    allowed_tools = ALLOWED_TOOLS
+    prompt = build_prompt(ticket_key, cfg.orchestrator.fork_model)
 
     cmd = [
         claude_bin,
@@ -163,8 +91,9 @@ def orchestrate(ctx: click.Context, ticket_key: str | None, dry_run: bool, pre_s
         "--allowedTools", ",".join(allowed_tools),
     ]
 
-    if verbose:
-        cmd.extend(["--verbose", "--output-format", "stream-json"])
+    # Always stream NDJSON internally so we can record a run log.
+    # --verbose just toggles whether formatted events are echoed to stdout.
+    cmd.extend(["--verbose", "--output-format", "stream-json"])
 
     if use_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
@@ -175,31 +104,28 @@ def orchestrate(ctx: click.Context, ticket_key: str | None, dry_run: bool, pre_s
 
     success(f"Launching orchestrator session (tools: {', '.join(allowed_tools)})")
 
-    if verbose:
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                cwd=str(root),
-                stdout=subprocess.PIPE,
-                stderr=sys.stderr,
-                text=True,
-            )
-            assert proc.stdout is not None
-            for raw_line in proc.stdout:
-                formatted = _format_stream_event(raw_line)
+    recorder = RunRecorder(root, ticket_key=ticket_key)
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(root),
+            stdout=subprocess.PIPE,
+            stderr=sys.stderr,
+            text=True,
+        )
+        assert proc.stdout is not None
+        for raw_line in proc.stdout:
+            recorder.record(raw_line)
+            if verbose:
+                formatted = format_stream_event(raw_line)
                 if formatted:
                     output(formatted)
-            proc.wait()
-        except KeyboardInterrupt:
-            output("Orchestrator session interrupted.")
-        except Exception as exc:
-            error(f"Failed to launch orchestrator: {exc}")
-            ctx.exit(1)
-    else:
-        try:
-            subprocess.run(cmd, cwd=str(root), check=False)
-        except KeyboardInterrupt:
-            output("Orchestrator session interrupted.")
-        except Exception as exc:
-            error(f"Failed to launch orchestrator: {exc}")
-            ctx.exit(1)
+        proc.wait()
+        path = recorder.finalize(proc.returncode)
+        success(f"Run log: {path}")
+    except KeyboardInterrupt:
+        output("Orchestrator session interrupted.")
+        recorder.finalize(returncode=-1)
+    except Exception as exc:
+        error(f"Failed to launch orchestrator: {exc}")
+        ctx.exit(1)

@@ -11,6 +11,7 @@
           "title": "ERSC-1278: Fix authentication middleware",
           "state": "OPEN",
           "isDraft": false,
+          "mergeable": "MERGEABLE",
           "url": "https://github.com/acme/backend/pull/42",
           "createdAt": "2026-03-10T10:00:00Z",
           "updatedAt": "2026-03-15T14:30:00Z",
@@ -20,7 +21,8 @@
             "nameWithOwner": "acme/backend"
           },
           "author": {
-            "login": "alice"
+            "login": "alice",
+            "avatarUrl": "https://avatars.githubusercontent.com/u/1?v=4"
           },
           "reviews": {
             "nodes": [
@@ -80,6 +82,7 @@
           "title": "PROJ-500: Add caching layer",
           "state": "MERGED",
           "isDraft": false,
+          "mergeable": "MERGEABLE",
           "url": "https://github.com/acme/backend/pull/99",
           "createdAt": "2026-03-01T08:00:00Z",
           "updatedAt": "2026-03-05T16:00:00Z",
@@ -89,7 +92,8 @@
             "nameWithOwner": "acme/backend"
           },
           "author": {
-            "login": "alice"
+            "login": "alice",
+            "avatarUrl": "https://avatars.githubusercontent.com/u/1?v=4"
           },
           "reviews": {
             "nodes": [
@@ -125,6 +129,7 @@
           "title": "WIP: Experiment with new parser",
           "state": "OPEN",
           "isDraft": true,
+          "mergeable": "UNKNOWN",
           "url": "https://github.com/acme/frontend/pull/7",
           "createdAt": "2026-03-14T12:00:00Z",
           "updatedAt": "2026-03-14T12:00:00Z",
@@ -134,7 +139,8 @@
             "nameWithOwner": "acme/frontend"
           },
           "author": {
-            "login": "alice"
+            "login": "alice",
+            "avatarUrl": "https://avatars.githubusercontent.com/u/1?v=4"
           },
           "reviews": {
             "nodes": []
@@ -143,6 +149,12 @@
             "nodes": [
               {
                 "requestedReviewer": { "login": "bob" }
+              },
+              {
+                "requestedReviewer": {
+                  "slug": "claims-dev",
+                  "organization": { "login": "acme" }
+                }
               }
             ]
           },

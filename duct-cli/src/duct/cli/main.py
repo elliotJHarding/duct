@@ -6,19 +6,33 @@ import textwrap
 import click
 
 COMMANDS = {
+    "activity": "duct.cli.activity_cmd:activity",
     "add-repo": "duct.cli.workspace_cmd:add_repo",
+    "agent": "duct.cli.agent_cmd:agent",
     "archive": "duct.cli.archive_cmd:archive",
     "config": "duct.cli.config_cmd:config",
+    "daemon": "duct.cli.daemon_cmd:daemon",
     "doctor": "duct.cli.doctor_cmd:doctor",
     "init": "duct.cli.init_cmd:init",
+    "list-branches": "duct.cli.workspace_cmd:list_branches_cmd",
+    "list-repos": "duct.cli.workspace_cmd:list_repos",
+    "notify": "duct.cli.notify_cmd:notify",
     "orchestrate": "duct.cli.orchestrate_cmd:orchestrate",
-    "priority": "duct.cli.priority_cmd:priority",
+    "perf": "duct.cli.perf_cmd:perf_cmd",
+    "pr": "duct.cli.pr_cmd:pr",
     "session": "duct.cli.session_cmd:session",
+    "setup": "duct.cli.setup_cmd:setup",
     "status": "duct.cli.status_cmd:status",
     "sync": "duct.cli.sync_cmd:sync",
     "ticket": "duct.cli.ticket_cmd:ticket",
+    "wiki": "duct.cli.wiki_cmd:wiki",
     "workspace": "duct.cli.workspace_cmd:workspace",
 }
+
+# Commands that should not appear in tab completion or `--help` output.
+# ``init`` is preserved as a hidden, scriptable entry point so tests and CI
+# can scaffold a workspace without going through the interactive flow.
+HIDDEN_COMMANDS = frozenset({"init"})
 
 
 def _zsh_completion_script() -> str:
@@ -80,6 +94,19 @@ def _zsh_completion_script() -> str:
             compadd -a ids
         }
 
+        _duct_complete_agent_name() {
+            local root
+            root="$(_duct_find_workspace_root)" || return
+            [[ -d "$root/agents" ]] || return
+            local -a agents
+            local f name
+            for f in "$root/agents"/*.md(N); do
+                name="${${f:t}%.md}"
+                agents+=( "$name" )
+            done
+            compadd -a agents
+        }
+
         _duct() {
             local curcontext="$curcontext" state line
             typeset -A opt_args
@@ -94,18 +121,25 @@ def _zsh_completion_script() -> str:
             case "$state" in
             cmd)
                 local -a commands=(
+                    'activity:Aggregate an activity log across sources'
                     'add-repo:Add a repo worktree to a ticket workspace'
+                    'agent:List and run workflow agents'
                     'archive:List and manage archived tickets'
                     'completion:Print shell completion activation script'
                     'config:Manage workspace configuration'
+                    'daemon:Manage the background daemon'
                     'doctor:Check workspace health'
                     'init:Create workspace skeleton'
+                    'list-branches:List branches for a repo'
+                    'list-repos:List available repos (local + GitHub orgs)'
+                    'notify:Notify the user (orchestrator actuating surface)'
                     'orchestrate:Launch an orchestrator session'
-                    'priority:View or edit the priority list'
+                    'pr:List and inspect pull requests'
                     'session:View and manage Claude Code sessions'
                     'status:Show workspace status overview'
                     'sync:Run sync sources'
                     'ticket:List and inspect tracked tickets'
+                    'wiki:Inspect and maintain the workspace wiki'
                     'workspace:Manage ticket workspaces'
                 )
                 _describe 'command' commands
@@ -118,6 +152,21 @@ def _zsh_completion_script() -> str:
                         '1:ticket key:_duct_complete_ticket_key' \\
                         '2:repo name:_duct_complete_repo_name' \\
                         '3:base branch'
+                    ;;
+                agent)
+                    local -a subcmds=( 'list:List agents' 'run:Run an agent' )
+                    _arguments '1:subcommand:((${(j: :)${subcmds[@]}}))' '*::arg:->agent_args'
+                    if [[ "$state" == "agent_args" ]]; then
+                        case "${line[1]}" in
+                        run)
+                            _arguments \\
+                                '--ticket=[Ticket key]:ticket:_duct_complete_ticket_key' \\
+                                '--repo=[Repo worktree]:repo:_duct_complete_repo_name' \\
+                                '--skip-permissions[Skip permissions]' \\
+                                '1:agent name:_duct_complete_agent_name'
+                            ;;
+                        esac
+                    fi
                     ;;
                 archive)
                     local -a subcmds=( 'add:Archive a ticket' 'list:List archived tickets' 'restore:Restore an archived ticket' )
@@ -133,6 +182,16 @@ def _zsh_completion_script() -> str:
                 completion)
                     _arguments '1:shell:(bash zsh fish)'
                     ;;
+                list-branches)
+                    _arguments '1:repo name:_duct_complete_repo_name'
+                    ;;
+                notify)
+                    _arguments \\
+                        '--title=[Notification title]:title' \\
+                        '--body=[Notification body]:body' \\
+                        '--ticket=[Related ticket]:ticket key:_duct_complete_ticket_key' \\
+                        '--url=[Click-to-open URL]:url'
+                    ;;
                 orchestrate)
                     _arguments \\
                         '--ticket=[Focus on a ticket]:ticket key:_duct_complete_ticket_key' \\
@@ -141,13 +200,17 @@ def _zsh_completion_script() -> str:
                         '--skip-permissions[Skip permissions]' \\
                         '--verbose[Stream activity]'
                     ;;
-                priority)
-                    local -a subcmds=( 'add:Add a ticket to priority list' )
-                    _arguments '1:subcommand:((${(j: :)${subcmds[@]}}))' '*::arg:->priority_args'
-                    if [[ "$state" == "priority_args" ]]; then
+                pr)
+                    local -a subcmds=( 'list:List pull requests' 'open:Open PR in browser' )
+                    _arguments '1:subcommand:((${(j: :)${subcmds[@]}}))' '*::arg:->pr_args'
+                    if [[ "$state" == "pr_args" ]]; then
                         case "${line[1]}" in
-                        add)
-                            _arguments '1:ticket key:_duct_complete_ticket_key' '*:note'
+                        list)
+                            _arguments \\
+                                '--all[Show all tickets]' \\
+                                '--closed[Include terminal-status tickets]' \\
+                                '--state=[Filter by PR state]:state:(open merged closed)' \\
+                                '1:ticket key:_duct_complete_ticket_key'
                             ;;
                         esac
                     fi
@@ -175,6 +238,10 @@ def _zsh_completion_script() -> str:
                         esac
                     fi
                     ;;
+                daemon)
+                    local -a subcmds=( 'run:Run the loop in the foreground' 'install:Install + start the launchd agent' 'uninstall:Stop + remove the launchd agent' 'start:Start the installed daemon' 'stop:Stop the running daemon' 'status:Show daemon status' )
+                    _arguments '1:subcommand:((${(j: :)${subcmds[@]}}))'
+                    ;;
                 sync)
                     local -a subcmds=( 'ci:Sync CI' 'github:Sync GitHub' 'jira:Sync Jira' 'sessions:Sync sessions' 'status:Show sync status' 'workspace:Sync workspace' )
                     _arguments \\
@@ -193,13 +260,23 @@ def _zsh_completion_script() -> str:
                             _arguments \\
                                 '--category=[Filter by category]:category' \\
                                 '--status=[Filter by status]:status' \\
-                                '--sort=[Sort results]:sort:(priority key status category)'
+                                '--sort=[Sort results]:sort:(key status category)'
                             ;;
                         esac
                     fi
                     ;;
+                wiki)
+                    local -a subcmds=( 'list:List entries' 'show:Show an entry' 'review:Run the maintainer' )
+                    _arguments '1:subcommand:((${(j: :)${subcmds[@]}}))'
+                    ;;
                 workspace)
-                    local -a subcmds=( 'add-repo:Add repo worktree' 'path:Print workspace path' 'status:Show workspace health' )
+                    local -a subcmds=(
+                        'add-repo:Add repo worktree'
+                        'list-branches:List branches for a repo'
+                        'list-repos:List available repos'
+                        'path:Print workspace path'
+                        'status:Show workspace health'
+                    )
                     _arguments '1:subcommand:((${(j: :)${subcmds[@]}}))' '*::arg:->workspace_args'
                     if [[ "$state" == "workspace_args" ]]; then
                         case "${line[1]}" in
@@ -209,6 +286,9 @@ def _zsh_completion_script() -> str:
                                 '1:ticket key:_duct_complete_ticket_key' \\
                                 '2:repo name:_duct_complete_repo_name' \\
                                 '3:base branch'
+                            ;;
+                        list-branches)
+                            _arguments '1:repo name:_duct_complete_repo_name'
                             ;;
                         path)
                             _arguments '1:ticket key:_duct_complete_ticket_key'
@@ -276,11 +356,25 @@ def _bash_completion_script() -> str:
             COMPREPLY=( $(compgen -W "$ids" -- "$cur") )
         }
 
+        _duct_complete_agent_name() {
+            local root
+            root="$(_duct_find_workspace_root)" || return
+            [[ -d "$root/agents" ]] || return
+            local cur="${COMP_WORDS[COMP_CWORD]}"
+            local names=""
+            local f
+            for f in "$root/agents"/*.md; do
+                [[ -f "$f" ]] || continue
+                names="$names $(basename "$f" .md)"
+            done
+            COMPREPLY=( $(compgen -W "$names" -- "$cur") )
+        }
+
         _duct() {
             local cur prev words cword
             _init_completion || return
 
-            local commands="add-repo archive completion config doctor init orchestrate priority session status sync ticket workspace"
+            local commands="activity add-repo agent archive completion config daemon doctor init list-branches list-repos notify orchestrate pr session status sync ticket wiki workspace"
 
             if [[ $cword -eq 1 ]]; then
                 COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -295,6 +389,21 @@ def _bash_completion_script() -> str:
                 3) _duct_complete_repo_name ;;
                 esac
                 ;;
+            agent)
+                if [[ $cword -eq 2 ]]; then
+                    COMPREPLY=( $(compgen -W "list run" -- "$cur") )
+                elif [[ "${words[2]}" == "run" ]]; then
+                    if [[ "$prev" == "--ticket" ]]; then
+                        _duct_complete_ticket_key
+                    elif [[ "$prev" == "--repo" ]]; then
+                        _duct_complete_repo_name
+                    elif [[ $cword -eq 3 ]]; then
+                        _duct_complete_agent_name
+                    else
+                        COMPREPLY=( $(compgen -W "--ticket --repo --skip-permissions" -- "$cur") )
+                    fi
+                fi
+                ;;
             archive)
                 if [[ $cword -eq 2 ]]; then
                     COMPREPLY=( $(compgen -W "add list restore" -- "$cur") )
@@ -307,6 +416,19 @@ def _bash_completion_script() -> str:
             completion)
                 [[ $cword -eq 2 ]] && COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
                 ;;
+            daemon)
+                [[ $cword -eq 2 ]] && COMPREPLY=( $(compgen -W "run install uninstall start stop status" -- "$cur") )
+                ;;
+            list-branches)
+                [[ $cword -eq 2 ]] && _duct_complete_repo_name
+                ;;
+            notify)
+                if [[ "$prev" == "--ticket" ]]; then
+                    _duct_complete_ticket_key
+                else
+                    COMPREPLY=( $(compgen -W "--title --body --ticket --url" -- "$cur") )
+                fi
+                ;;
             orchestrate)
                 if [[ "$prev" == "--ticket" ]]; then
                     _duct_complete_ticket_key
@@ -314,11 +436,13 @@ def _bash_completion_script() -> str:
                     COMPREPLY=( $(compgen -W "--ticket --dry-run --sync --skip-permissions --verbose" -- "$cur") )
                 fi
                 ;;
-            priority)
+            pr)
                 if [[ $cword -eq 2 ]]; then
-                    COMPREPLY=( $(compgen -W "add" -- "$cur") )
-                elif [[ $cword -eq 3 && "${words[2]}" == "add" ]]; then
-                    _duct_complete_ticket_key
+                    COMPREPLY=( $(compgen -W "list open" -- "$cur") )
+                elif [[ $cword -eq 3 ]]; then
+                    case "${words[2]}" in
+                    list) _duct_complete_ticket_key ;;
+                    esac
                 fi
                 ;;
             session)
@@ -343,9 +467,14 @@ def _bash_completion_script() -> str:
                     esac
                 fi
                 ;;
+            wiki)
+                if [[ $cword -eq 2 ]]; then
+                    COMPREPLY=( $(compgen -W "list show review" -- "$cur") )
+                fi
+                ;;
             workspace)
                 if [[ $cword -eq 2 ]]; then
-                    COMPREPLY=( $(compgen -W "add-repo path status" -- "$cur") )
+                    COMPREPLY=( $(compgen -W "add-repo list-branches list-repos path status" -- "$cur") )
                 elif [[ $cword -ge 3 ]]; then
                     case "${words[2]}" in
                     add-repo)
@@ -353,6 +482,9 @@ def _bash_completion_script() -> str:
                         3) _duct_complete_ticket_key ;;
                         4) _duct_complete_repo_name ;;
                         esac
+                        ;;
+                    list-branches)
+                        [[ $cword -eq 3 ]] && _duct_complete_repo_name
                         ;;
                     path)
                         [[ $cword -eq 3 ]] && _duct_complete_ticket_key
@@ -412,22 +544,38 @@ def _fish_completion_script() -> str:
             end
         end
 
+        function __duct_complete_agent_name
+            set -l root (__duct_find_workspace_root); or return
+            test -d "$root/agents"; or return
+            for f in $root/agents/*.md
+                test -f "$f"; or continue
+                basename "$f" .md
+            end
+        end
+
         # Disable default file completions
         complete -c duct -f
 
         # Top-level commands
+        complete -c duct -n '__fish_use_subcommand' -a 'activity' -d 'Aggregate activity log'
         complete -c duct -n '__fish_use_subcommand' -a 'add-repo' -d 'Add a repo worktree'
+        complete -c duct -n '__fish_use_subcommand' -a 'agent' -d 'List and run workflow agents'
         complete -c duct -n '__fish_use_subcommand' -a 'archive' -d 'Manage archived tickets'
         complete -c duct -n '__fish_use_subcommand' -a 'completion' -d 'Print completion script'
         complete -c duct -n '__fish_use_subcommand' -a 'config' -d 'Manage configuration'
         complete -c duct -n '__fish_use_subcommand' -a 'doctor' -d 'Check workspace health'
         complete -c duct -n '__fish_use_subcommand' -a 'init' -d 'Create workspace skeleton'
+        complete -c duct -n '__fish_use_subcommand' -a 'list-branches' -d 'List branches for a repo'
+        complete -c duct -n '__fish_use_subcommand' -a 'daemon' -d 'Manage the background daemon'
+        complete -c duct -n '__fish_use_subcommand' -a 'list-repos' -d 'List available repos'
+        complete -c duct -n '__fish_use_subcommand' -a 'notify' -d 'Notify the user'
         complete -c duct -n '__fish_use_subcommand' -a 'orchestrate' -d 'Launch orchestrator'
-        complete -c duct -n '__fish_use_subcommand' -a 'priority' -d 'View or edit priorities'
+        complete -c duct -n '__fish_use_subcommand' -a 'pr' -d 'List and inspect pull requests'
         complete -c duct -n '__fish_use_subcommand' -a 'session' -d 'Manage Claude sessions'
         complete -c duct -n '__fish_use_subcommand' -a 'status' -d 'Show status overview'
         complete -c duct -n '__fish_use_subcommand' -a 'sync' -d 'Run sync sources'
         complete -c duct -n '__fish_use_subcommand' -a 'ticket' -d 'List and inspect tickets'
+        complete -c duct -n '__fish_use_subcommand' -a 'wiki' -d 'Inspect and maintain the workspace wiki'
         complete -c duct -n '__fish_use_subcommand' -a 'workspace' -d 'Manage workspaces'
 
         # completion
@@ -436,6 +584,17 @@ def _fish_completion_script() -> str:
         # ticket subcommands
         complete -c duct -n '__fish_seen_subcommand_from ticket; and not __fish_seen_subcommand_from list open show' -a 'list open show'
         complete -c duct -n '__fish_seen_subcommand_from ticket; and __fish_seen_subcommand_from open show' -a '(__duct_complete_ticket_key)'
+
+        # pr subcommands
+        complete -c duct -n '__fish_seen_subcommand_from pr; and not __fish_seen_subcommand_from list open' -a 'list open'
+        complete -c duct -n '__fish_seen_subcommand_from pr; and __fish_seen_subcommand_from list' -a '(__duct_complete_ticket_key)'
+
+        # agent subcommands
+        complete -c duct -n '__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from list run' -a 'list run'
+        complete -c duct -n '__fish_seen_subcommand_from agent; and __fish_seen_subcommand_from run' -a '(__duct_complete_agent_name)'
+        complete -c duct -n '__fish_seen_subcommand_from agent; and __fish_seen_subcommand_from run' -l ticket -a '(__duct_complete_ticket_key)'
+        complete -c duct -n '__fish_seen_subcommand_from agent; and __fish_seen_subcommand_from run' -l repo -a '(__duct_complete_repo_name)'
+        complete -c duct -n '__fish_seen_subcommand_from agent; and __fish_seen_subcommand_from run' -l skip-permissions
 
         # archive subcommands
         complete -c duct -n '__fish_seen_subcommand_from archive; and not __fish_seen_subcommand_from add list restore' -a 'add list restore'
@@ -449,9 +608,14 @@ def _fish_completion_script() -> str:
         # sync subcommands
         complete -c duct -n '__fish_seen_subcommand_from sync; and not __fish_seen_subcommand_from ci github jira sessions status workspace' -a 'ci github jira sessions status workspace'
 
-        # priority subcommands
-        complete -c duct -n '__fish_seen_subcommand_from priority; and not __fish_seen_subcommand_from add' -a 'add'
-        complete -c duct -n '__fish_seen_subcommand_from priority; and __fish_seen_subcommand_from add' -a '(__duct_complete_ticket_key)'
+        # daemon subcommands
+        complete -c duct -n '__fish_seen_subcommand_from daemon; and not __fish_seen_subcommand_from run install uninstall start stop status' -a 'run install uninstall start stop status'
+
+        # notify options
+        complete -c duct -n '__fish_seen_subcommand_from notify' -l title
+        complete -c duct -n '__fish_seen_subcommand_from notify' -l body
+        complete -c duct -n '__fish_seen_subcommand_from notify' -l ticket -a '(__duct_complete_ticket_key)'
+        complete -c duct -n '__fish_seen_subcommand_from notify' -l url
 
         # orchestrate options
         complete -c duct -n '__fish_seen_subcommand_from orchestrate' -l ticket -a '(__duct_complete_ticket_key)'
@@ -464,11 +628,18 @@ def _fish_completion_script() -> str:
         complete -c duct -n '__fish_seen_subcommand_from add-repo' -a '(__duct_complete_ticket_key)'
         complete -c duct -n '__fish_seen_subcommand_from add-repo' -a '(__duct_complete_repo_name)'
 
+        # list-branches positional arg
+        complete -c duct -n '__fish_seen_subcommand_from list-branches' -a '(__duct_complete_repo_name)'
+
+        # wiki subcommands
+        complete -c duct -n '__fish_seen_subcommand_from wiki; and not __fish_seen_subcommand_from list show review' -a 'list show review'
+
         # workspace subcommands
-        complete -c duct -n '__fish_seen_subcommand_from workspace; and not __fish_seen_subcommand_from add-repo path status' -a 'add-repo path status'
+        complete -c duct -n '__fish_seen_subcommand_from workspace; and not __fish_seen_subcommand_from add-repo list-branches list-repos path status' -a 'add-repo list-branches list-repos path status'
         complete -c duct -n '__fish_seen_subcommand_from workspace; and __fish_seen_subcommand_from path' -a '(__duct_complete_ticket_key)'
         complete -c duct -n '__fish_seen_subcommand_from workspace; and __fish_seen_subcommand_from add-repo' -a '(__duct_complete_ticket_key)'
         complete -c duct -n '__fish_seen_subcommand_from workspace; and __fish_seen_subcommand_from add-repo' -a '(__duct_complete_repo_name)'
+        complete -c duct -n '__fish_seen_subcommand_from workspace; and __fish_seen_subcommand_from list-branches' -a '(__duct_complete_repo_name)'
     """)
 
 
@@ -498,7 +669,8 @@ class LazyGroup(click.Group):
     """
 
     def list_commands(self, ctx):
-        return sorted(COMMANDS.keys()) + ["completion"]
+        visible = [c for c in COMMANDS if c not in HIDDEN_COMMANDS]
+        return sorted(visible) + ["completion"]
 
     def get_command(self, ctx, cmd_name):
         if cmd_name == "completion":
@@ -510,14 +682,63 @@ class LazyGroup(click.Group):
         return getattr(mod, attr)
 
 
-@click.group(cls=LazyGroup)
+def _migrate_credentials_once() -> None:
+    """Carry pre-keychain secrets into the OS keychain, once, from the shell.
+
+    Runs on every CLI invocation but is a cheap no-op after the first migration
+    (a single keychain read). This must happen in the user's shell — where the
+    legacy ``JIRA_*`` env vars and old ``credentials.yaml`` are visible — so the
+    launchd daemon can subsequently read the keychain the shell populated.
+    """
+    import os
+
+    if os.environ.get("_DUCT_COMPLETE"):
+        return  # Don't touch the keychain during shell completion.
+    try:
+        from duct.credentials import migrate_legacy_credentials
+
+        migrate_legacy_credentials()
+    except Exception:
+        pass  # Best-effort; never block the CLI on migration.
+
+
+def _state_is_ready() -> bool:
+    """True when duct has a workspace and the Jira credentials it needs."""
+    from duct.credentials import resolve_jira_email, resolve_jira_token
+    from duct.global_state import load_state
+
+    state = load_state()
+    if not state.workspace_path or not (state.workspace_path / "config.yaml").exists():
+        return False
+    return bool(resolve_jira_email() and resolve_jira_token())
+
+
+def _print_bare_status(ctx: click.Context) -> None:
+    """Show a short status block + suggested commands when state is ready."""
+    from duct.cli.output import output, section, success
+    from duct.global_state import load_state
+
+    state = load_state()
+    section("duct")
+    success(f"Workspace: {state.workspace_path}")
+    output("")
+    output("Suggested commands:")
+    output("  [bold]duct sync[/bold]         refresh tickets, PRs, and CI")
+    output("  [bold]duct status[/bold]       workspace overview")
+    output("  [bold]duct doctor[/bold]       health check")
+    output("  [bold]duct-tui[/bold]          launch the TUI")
+    output("  [bold]duct setup[/bold]        re-run the guided flow")
+
+
+@click.group(cls=LazyGroup, invoke_without_command=True)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
 @click.option("--debug", is_flag=True, help="Show debug information.")
 @click.option(
     "--workspace-root",
     type=click.Path(),
     default=None,
-    help="Override workspace root directory.",
+    hidden=True,
+    help="Override workspace root (escape hatch for tests/CI).",
 )
 @click.pass_context
 def cli(ctx: click.Context, json_output: bool, debug: bool, workspace_root: str | None) -> None:
@@ -526,3 +747,15 @@ def cli(ctx: click.Context, json_output: bool, debug: bool, workspace_root: str 
     ctx.obj["json"] = json_output
     ctx.obj["debug"] = debug
     ctx.obj["workspace_root"] = workspace_root
+
+    _migrate_credentials_once()
+
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Bare `duct` — set up if anything's missing, otherwise show status.
+    if _state_is_ready():
+        _print_bare_status(ctx)
+    else:
+        from duct.cli.setup_cmd import run_setup
+        run_setup(ctx)

@@ -1,0 +1,56 @@
+hardinge@Mac ~/workspace/duct/ICEC-1638-claims-apis-poc                                                                                                                                                  
+❯ wsc
+hardinge@Mac ~/workspace/claims                                                                                                                                                                          
+❯ cd ice-claims 
+hardinge@Mac ~/workspace/claims/ice-claims release/25.2.1.DEMO.1                                                                                                                                         
+❯ clp
+ ▐▛███▜▌   Claude Code v2.1.101                                                                                                                                                                          
+▝▜█████▛▘  Opus 4.6 (1M context) with high effort · Claude Max                                                                                                                                           
+  ▘▘ ▝▝    ~/workspace/claims/ice-claims                                                                                                                                                                 
+                                                                                                                                                                                                         
+⏺ I have enough material. Let me write the assessment to the plan file.                                                                                                                                  
+                                                                                                                                                                                                         
+⏺ Updated plan                                                                                                                                                                                           
+  ⎿  /plan to preview                                                                                                                                                                                    
+                                                                                                                                                                                                         
+⏺ Now I need to exit plan mode to deliver the report.                                                                                                                                                    
+                                                                                                                                                                                                         
+⏺ The ExitPlanMode tool description explicitly says not to use it for research tasks — and this is a research/assessment task, not an implementation plan. I'll deliver the summary directly and leave it
+   to you to exit plan mode when you've read the full report.                                                                                                                                            
+                                                                                                                                                                                                         
+  The full assessment is at /Users/hardinge/.claude/plans/vivid-petting-newt.md. Headline finding: this codebase has almost nothing to gain from a Spring Boot migration, and the cost is large. The     
+  heavy modernisation work Boot would normally deliver (Spring 6, Hibernate 6, Java 17, Jakarta namespace) is already done. Boot's core value proposition — auto-configuration — is neutralised because  
+  almost every subsystem (Narayana XA, custom session repository, custom property resolution, hand-managed Camel context, custom CAS wiring, custom log4j listener) deliberately diverges from Boot      
+  defaults and would have to fight auto-config.                                                                                                                                                          
+                                                                                                                                                                                                         
+  The report covers: current state snapshot with concrete version numbers and file counts, eight workstreams required for migration, the specific pain points I would not underestimate (Narayana JTA    
+  with no Boot starter in 3.x, Camel-Spring-Boot vs hand-managed context, property resolution faithfulness, TestNG friction with Boot's test infra), genuine advantages (Actuator and Micrometer are the 
+  material wins — both available without a full migration), genuine drawbacks, and a 6-week to 1-year effort range depending on scope.                                                                   
+                                                                                                                                                                                                         
+  Recommendation in the report is to not migrate, and instead spend the same budget on targeted improvements: add spring-boot-actuator standalone, consolidate the already-started Java security config, 
+  move the Jasypt key out of XML, and clean up the anomalous spring-boot-starter-webflux:3.3.10 dependency I found around build.gradle:1062 (almost certainly only there to transitively pull in         
+  WebClient).                                                                                                                                                                                            
+                                                                                                                                                                                                         
+✻ Crunched for 8m 9s                                                                                                                                                                                     
+                                                                                                                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                                                                                                                        
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  hardinge@Mac \~/workspace/claims/ice-claims release/25.2.1.DEMO.1                                                                                                                                      
+  ⏸ plan mode on (shift+tab to cycle)                                                                                                                                                                    
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+                                                                                                                                                                                                         
+
+
+
+
+
+

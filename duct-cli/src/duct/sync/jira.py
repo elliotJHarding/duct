@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +20,7 @@ from duct.workspace import archive_ticket, ensure_epic_link, ensure_ticket_dir, 
 
 _SEARCH_FIELDS = (
     "summary,status,priority,issuetype,assignee,project,parent,"
-    "customfield_10014,customfield_10020,fixVersions,components,labels,"
+    "customfield_10014,customfield_10020,customfield_11704,fixVersions,components,labels,"
     "comment,description"
 )
 
@@ -43,10 +44,34 @@ _STATUS_CATEGORIES: dict[str, str] = {
 
 _DEFAULT_CATEGORY = "Pre-Development"
 
+_IDENTITY_CACHE_PATH = (".cache", "jira_identity.json")
+
 
 def _status_category(status: str) -> str:
     """Map a Jira status name to a workflow category."""
     return _STATUS_CATEGORIES.get(status.upper(), _DEFAULT_CATEGORY)
+
+
+def _identity_cache_path(root: Path) -> Path:
+    return root.joinpath(*_IDENTITY_CACHE_PATH)
+
+
+def _write_identity_cache(root: Path, account_id: str) -> None:
+    """Persist the authenticated user's Jira accountId for the API layer."""
+    path = _identity_cache_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"jira_account_id": account_id}))
+
+
+def read_identity_cache(root: Path) -> str:
+    """Return the cached Jira accountId, or "" if not yet written."""
+    path = _identity_cache_path(root)
+    if not path.exists():
+        return ""
+    try:
+        return json.loads(path.read_text()).get("jira_account_id", "") or ""
+    except (OSError, ValueError):
+        return ""
 
 
 class JiraSync:
@@ -91,6 +116,15 @@ class JiraSync:
                 errors=[str(exc)],
             )
 
+        # Resolve and cache the current user's accountId so the overview
+        # can flag tickets assigned to other people without recomparing
+        # display names. Best-effort — a missing /myself response leaves
+        # the cache untouched, and api.get_ticket_overviews then treats
+        # every ticket as "mine" until the next successful sync.
+        account_id = self._resolve_account_id()
+        if account_id:
+            _write_identity_cache(root, account_id)
+
         # First pass: build epic map (ticket_key -> epic_key).
         epic_map: dict[str, str] = {}
         epic_summaries: dict[str, str] = {}
@@ -127,6 +161,7 @@ class JiraSync:
                     issue_type=ticket.issue_type,
                     assignee=ticket.assignee,
                     url=ticket.url,
+                    assignee_account_id=ticket.assignee_account_id,
                     description=ticket.description,
                     epic_key=ticket.epic_key,
                     sprint=ticket.sprint,
@@ -155,13 +190,25 @@ class JiraSync:
             except Exception as exc:
                 errors.append(f"{key}: failed to write ticket - {exc}")
 
-        # Archive tickets that disappeared from query results.
+        # Refresh tickets that disappeared from query results (e.g.
+        # reassigned for testing). Archive those in a terminal status;
+        # re-sync the rest so on-disk status stays current.
         stale_keys = previous_keys - current_keys
         for key in stale_keys:
             try:
-                archive_ticket(root, key)
+                issue = self._fetch_issue(key)
+                if not issue:
+                    continue
+                status_name = issue.get("fields", {}).get("status", {}).get("name", "")
+                if _status_category(status_name) == "Done":
+                    archive_ticket(root, key)
+                    continue
+                ticket = self._extract_ticket(issue, epic_map)
+                ticket_dir = ensure_ticket_dir(root, key, ticket.summary)
+                self._write_ticket_md(ticket, ticket_dir)
+                synced += 1
             except Exception as exc:
-                errors.append(f"{key}: failed to archive - {exc}")
+                errors.append(f"{key}: failed to refresh stale ticket - {exc}")
 
         return SyncResult(
             source=self.name,
@@ -223,6 +270,81 @@ class JiraSync:
         data = response.json()
         return [t["name"] for t in data.get("transitions", [])]
 
+    def _fetch_issue(self, key: str) -> dict | None:
+        """Fetch a single issue with the standard field set, or None on failure."""
+        url = f"{self._base_url}/issue/{key}"
+        params = {"fields": _SEARCH_FIELDS}
+        response = httpx.get(url, headers=self._headers, params=params, timeout=15)
+        if response.status_code != 200:
+            return None
+        return response.json()
+
+    def post_comment(self, key: str, body: str) -> None:
+        """Post a plain-text comment to a Jira issue.
+
+        Wraps *body* in minimal ADF (one paragraph per line) and POSTs to
+        the v3 comment endpoint.  Raises SyncError on failure, AuthError on
+        401/403.
+        """
+        paragraphs = [
+            {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": line}],
+            }
+            for line in body.splitlines()
+            if line.strip()
+        ]
+        if not paragraphs:
+            return
+
+        adf_body = {"type": "doc", "version": 1, "content": paragraphs}
+
+        url = f"{self._base_url}/issue/{key}/comment"
+        response = httpx.post(
+            url,
+            headers={**self._headers, "Content-Type": "application/json"},
+            json={"body": adf_body},
+            timeout=15,
+        )
+
+        if response.status_code == 401:
+            raise AuthError("Jira authentication failed (401)")
+        if response.status_code == 403:
+            raise AuthError("Jira access forbidden (403)")
+        if response.status_code not in (200, 201):
+            raise SyncError(
+                f"Failed to post comment to {key} "
+                f"(status {response.status_code}): {response.text[:200]}"
+            )
+
+    def _resolve_account_id(self) -> str:
+        """Fetch the authenticated user's accountId via /myself.
+
+        Returns "" on any failure — the caller should treat empty as
+        "unknown" and skip the identity cache update.
+        """
+        url = f"{self._base_url}/myself"
+        try:
+            response = httpx.get(url, headers=self._headers, timeout=10)
+        except httpx.HTTPError:
+            return ""
+        if response.status_code != 200:
+            return ""
+        try:
+            return response.json().get("accountId", "") or ""
+        except ValueError:
+            return ""
+
+    def _fetch_status(self, key: str) -> str | None:
+        """Fetch the current status name for an issue, or None on failure."""
+        issue = self._fetch_issue(key)
+        if not issue:
+            return None
+        try:
+            return issue["fields"]["status"]["name"]
+        except (KeyError, ValueError):
+            return None
+
     # ------------------------------------------------------------------
     # Field extraction
     # ------------------------------------------------------------------
@@ -259,8 +381,10 @@ class JiraSync:
         assignee_field = fields.get("assignee")
         if assignee_field and isinstance(assignee_field, dict):
             assignee = assignee_field.get("displayName", "Unassigned")
+            assignee_account_id = assignee_field.get("accountId", "") or ""
         else:
             assignee = "Unassigned"
+            assignee_account_id = ""
 
         fix_versions = [v["name"] for v in (fields.get("fixVersions") or [])]
         components = [c["name"] for c in (fields.get("components") or [])]
@@ -275,6 +399,10 @@ class JiraSync:
                 sprint_name = last_sprint.get("name")
             elif isinstance(last_sprint, str):
                 sprint_name = last_sprint
+
+        # Customer Name (PS project single-select option; only the value is human-readable).
+        customer_field = fields.get("customfield_11704")
+        customer_name = customer_field.get("value") if isinstance(customer_field, dict) else None
 
         # Description (ADF -> markdown).
         description_adf = fields.get("description")
@@ -305,9 +433,11 @@ class JiraSync:
             issue_type=issue_type,
             assignee=assignee,
             url=f"https://{self._domain}/browse/{key}",
+            assignee_account_id=assignee_account_id,
             description=description,
             epic_key=epic_key,
             sprint=sprint_name,
+            customer_name=customer_name,
             fix_versions=fix_versions,
             components=components,
             labels=labels,
@@ -343,7 +473,11 @@ class JiraSync:
         parts.append(f"| Category | {ticket.category} |")
         parts.append(f"| Priority | {ticket.priority} |")
         parts.append(f"| Type | {ticket.issue_type} |")
+        if ticket.customer_name:
+            parts.append(f"| Customer Name | {ticket.customer_name} |")
         parts.append(f"| Assignee | {ticket.assignee} |")
+        if ticket.assignee_account_id:
+            parts.append(f"| Assignee ID | {ticket.assignee_account_id} |")
         epic_str = ticket.epic_key or "\u2014"
         parts.append(f"| Epic | {epic_str} |")
         parts.append(f"| Fix Version | {fix_version_str} |")

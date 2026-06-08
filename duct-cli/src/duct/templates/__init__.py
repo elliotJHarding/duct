@@ -1,4 +1,10 @@
-"""Template loading for duct workspace files."""
+"""Template loading for duct workspace files.
+
+Templates are bundled markdown / data files shipped inside the duct package.
+Names may include forward slashes to descend into subdirectories — for
+example ``load_template("claude_agents/wiki-reader.md")`` reads
+``templates/claude_agents/wiki-reader.md``.
+"""
 
 from __future__ import annotations
 

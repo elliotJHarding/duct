@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import click
 
 from duct.cli.output import error, get_json_mode, output, section, success, warn
 from duct.cli.resolve import resolve_root
+from duct.credentials import resolve_gh_token, resolve_jira_email, resolve_jira_token
 
 
 def _check(label: str, ok: bool, detail: str = "") -> bool:
@@ -49,7 +51,7 @@ def doctor(ctx: click.Context) -> None:
         all_ok &= _check("config.yaml found", True, str(root / "config.yaml"))
     except Exception as exc:
         _check("config.yaml found", False, str(exc))
-        error("Cannot continue without a workspace. Run 'duct init' first.")
+        error("Cannot continue without a workspace. Run `duct` to complete setup.")
         ctx.exit(1)
         return
 
@@ -70,39 +72,25 @@ def doctor(ctx: click.Context) -> None:
         all_ok &= _check("jira.jql set", bool(cfg.jira_jql), jql_detail)
 
     # 4. Workspace files
-    all_ok &= _check("PRIORITY.md exists", (root / "PRIORITY.md").exists())
     all_ok &= _check("WORKFLOW.md exists", (root / "WORKFLOW.md").exists())
 
     # 5. Environment variables / auth
     section("Authentication")
 
-    jira_email = os.environ.get("JIRA_EMAIL", "")
-    all_ok &= _check("JIRA_EMAIL set", bool(jira_email), jira_email if jira_email else "not set")
+    jira_email = resolve_jira_email()
+    all_ok &= _check("Jira email set", bool(jira_email), jira_email if jira_email else "not set")
 
-    jira_token = os.environ.get("JIRA_TOKEN", "")
-    all_ok &= _check("JIRA_TOKEN set", bool(jira_token), "***" if jira_token else "not set")
+    jira_token = resolve_jira_token()
+    all_ok &= _check("Jira token set", bool(jira_token), "***" if jira_token else "not set")
 
-    # GitHub token (check env vars + gh CLI)
-    gh_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    gh_token = resolve_gh_token()
     if gh_token:
-        all_ok &= _check("GitHub token", True, "from environment")
+        all_ok &= _check("GitHub token", True, "available")
     elif shutil.which("gh"):
-        import subprocess
-        try:
-            result = subprocess.run(
-                ["gh", "auth", "token"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                all_ok &= _check("GitHub token", True, "from gh auth")
-            else:
-                _check("GitHub token", False, "gh auth not logged in")
-                all_ok = False
-        except Exception:
-            _check("GitHub token", False, "gh auth check failed")
-            all_ok = False
+        _check("GitHub token", False, "gh CLI present but no token (try `gh auth login`)")
+        all_ok = False
     else:
-        _check("GitHub token", False, "no GH_TOKEN, GITHUB_TOKEN, or gh CLI")
+        _check("GitHub token", False, "no token in keychain, env, or gh CLI")
         all_ok = False
 
     # 6. API reachability
@@ -132,20 +120,12 @@ def doctor(ctx: click.Context) -> None:
         _check("Jira API reachable", False, "missing domain or credentials")
         all_ok = False
 
-    if gh_token or shutil.which("gh"):
+    if gh_token:
         try:
             import httpx
-            token = gh_token
-            if not token:
-                import subprocess
-                result = subprocess.run(
-                    ["gh", "auth", "token"],
-                    capture_output=True, text=True, timeout=5,
-                )
-                token = result.stdout.strip()
             response = httpx.get(
                 "https://api.github.com/user",
-                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                headers={"Authorization": f"Bearer {gh_token}", "Accept": "application/json"},
                 timeout=10,
             )
             if response.status_code == 200:
@@ -167,6 +147,32 @@ def doctor(ctx: click.Context) -> None:
     all_ok &= _check("claude CLI on PATH", bool(shutil.which("claude")))
     all_ok &= _check("git on PATH", bool(shutil.which("git")))
     _check("gh CLI on PATH", bool(shutil.which("gh")))  # not fatal
+    _check(
+        "mmdc on PATH",
+        bool(shutil.which("mmdc")),
+        "optional -- enables mermaid diagrams in duct-tui; install: npm i -g @mermaid-js/mermaid-cli",
+    )
+
+    # 7b. Background daemon (macOS notifications + sync + scheduling)
+    if sys.platform == "darwin":
+        section("Daemon")
+        from duct import daemon_state
+        from duct.cli.daemon_cmd import is_installed
+
+        installed = is_installed()
+        age = daemon_state.heartbeat_age_seconds(root)
+        running = age is not None and age < 90
+        _check("daemon installed", installed, "" if installed else "not installed")
+        _check(
+            "daemon running",
+            running,
+            f"last heartbeat {int(age)}s ago" if age is not None else "no heartbeat",
+        )
+        if cfg and cfg.notifications.enabled and not installed:
+            _suggest(
+                "Notifications are enabled but the daemon isn't installed",
+                "duct daemon install",
+            )
 
     # 8. Repo paths
     if cfg:

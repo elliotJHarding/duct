@@ -24,8 +24,8 @@ class SessionSync:
         start = time.time()
         errors: list[str] = []
 
-        ticket_keys = {key for key, _ in enumerate_ticket_dirs(root)}
-        if not ticket_keys:
+        ticket_paths = {key: path for key, path in enumerate_ticket_dirs(root)}
+        if not ticket_paths:
             return SyncResult(
                 source=self.name,
                 tickets_synced=0,
@@ -35,21 +35,22 @@ class SessionSync:
         sessions = self._discover_sessions()
 
         # Match sessions to tickets
-        ticket_sessions: dict[str, list[dict]] = {k: [] for k in ticket_keys}
+        ticket_sessions: dict[str, list[dict]] = {k: [] for k in ticket_paths}
         for session in sessions:
-            matched = self._match_ticket(session, ticket_keys)
+            matched = self._match_ticket(session, set(ticket_paths))
             if matched:
                 ticket_sessions[matched].append(session)
 
-        # Write CLAUDE_SESSIONS.md per ticket
+        # Write CLAUDE_SESSIONS.md per ticket. A ticket with no current sessions
+        # but an existing snapshot is rewritten — not skipped — so a stale "active"
+        # PID can't outlive the session that produced it. Tickets that have never
+        # had a snapshot are left alone to avoid creating empty files everywhere.
         synced = 0
-        for key, sess_list in ticket_sessions.items():
-            if not sess_list:
+        for key, ticket_path in ticket_paths.items():
+            sess_list = ticket_sessions[key]
+            snapshot = ticket_path / "orchestrator" / "CLAUDE_SESSIONS.md"
+            if not sess_list and not snapshot.exists():
                 continue
-            ticket_dirs = [(k, p) for k, p in enumerate_ticket_dirs(root) if k == key]
-            if not ticket_dirs:
-                continue
-            _, ticket_path = ticket_dirs[0]
             try:
                 self._write_sessions_md(sess_list, ticket_path)
                 synced += 1
@@ -219,6 +220,10 @@ class SessionSync:
 
         active = [s for s in sessions if s.get("alive")]
         terminated = [s for s in sessions if not s.get("alive")]
+
+        if not active and not terminated:
+            parts.append("No active or recent sessions.")
+            parts.append("")
 
         if active:
             parts.append("## Active")

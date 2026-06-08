@@ -63,6 +63,9 @@ _SETTABLE_KEYS = {
     "syncIntervals.sessions": ("syncIntervals", "sessions"),
     "syncIntervals.workspace": ("syncIntervals", "workspace"),
     "syncIntervals.ci": ("syncIntervals", "ci"),
+    "display.nerdFont": ("display", "nerdFont"),
+    "syncIntervals.activity": ("syncIntervals", "activity"),
+    "activity.outlookPdfPath": ("activity", "outlookPdfPath"),
 }
 
 
@@ -106,6 +109,17 @@ def config_set(ctx: click.Context, key: str, value: str) -> None:
             value = int(value)  # type: ignore[assignment]
         except ValueError:
             error(f"Interval value must be an integer (seconds), got '{value}'")
+            ctx.exit(1)
+            return
+
+    # Convert boolean values
+    if section == "display":
+        if value.lower() in ("true", "1", "yes"):
+            value = True  # type: ignore[assignment]
+        elif value.lower() in ("false", "0", "no"):
+            value = False  # type: ignore[assignment]
+        else:
+            error(f"Boolean value expected (true/false), got '{value}'")
             ctx.exit(1)
             return
 

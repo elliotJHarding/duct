@@ -39,9 +39,10 @@ def _build_all_sources(cfg) -> tuple[list, list[tuple[str, str]]]:
 
     # GitHub
     try:
+        from duct.config import github_username
         from duct.sync.github import GitHubSync
 
-        sources.append(GitHubSync(token=gh_token()))
+        sources.append(GitHubSync(token=gh_token(), github_username=github_username()))
     except AuthError as exc:
         skipped.append(("github", str(exc)))
 
@@ -56,6 +57,10 @@ def _build_all_sources(cfg) -> tuple[list, list[tuple[str, str]]]:
     # Workspace (no auth required)
     from duct.sync.workspace_sync import WorkspaceSync
     sources.append(WorkspaceSync())
+
+    # Per-ticket CLAUDE.md (must run last; depends on the artifacts other sources produce)
+    from duct.sync.claude_md import ClaudeMdSync
+    sources.append(ClaudeMdSync())
 
     return sources, skipped
 
@@ -113,6 +118,7 @@ def sync(ctx: click.Context, force: bool) -> None:
         "sessions": cfg.sync_intervals.sessions,
         "workspace": cfg.sync_intervals.workspace,
         "ci": cfg.sync_intervals.ci,
+        "claude_md": cfg.sync_intervals.claude_md,
     }
     coordinator = SyncCoordinator(root, intervals)
     sources, skipped = _build_all_sources(cfg)
@@ -200,10 +206,11 @@ def sync_jira(ctx: click.Context) -> None:
 @click.pass_context
 def sync_github(ctx: click.Context) -> None:
     """Sync GitHub pull requests."""
+    from duct.config import github_username
     from duct.sync.github import GitHubSync
 
     def factory(cfg):
-        return GitHubSync(token=gh_token())
+        return GitHubSync(token=gh_token(), github_username=github_username())
 
     _run_single_source(ctx, factory)
 
@@ -244,6 +251,18 @@ def sync_workspace(ctx: click.Context) -> None:
     _run_single_source(ctx, factory)
 
 
+@sync.command("claude-md")
+@click.pass_context
+def sync_claude_md(ctx: click.Context) -> None:
+    """Refresh per-ticket CLAUDE.md files."""
+    from duct.sync.claude_md import ClaudeMdSync
+
+    def factory(_cfg):
+        return ClaudeMdSync()
+
+    _run_single_source(ctx, factory)
+
+
 @sync.command("status")
 @click.pass_context
 def sync_status(ctx: click.Context) -> None:
@@ -262,6 +281,7 @@ def sync_status(ctx: click.Context) -> None:
         "sessions": cfg.sync_intervals.sessions,
         "workspace": cfg.sync_intervals.workspace,
         "ci": cfg.sync_intervals.ci,
+        "claude_md": cfg.sync_intervals.claude_md,
     }
     coordinator = SyncCoordinator(root, intervals)
     statuses = coordinator.all_source_statuses()

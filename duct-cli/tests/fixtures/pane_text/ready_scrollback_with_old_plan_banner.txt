@@ -1,0 +1,49 @@
+# Regression fixture — the user was in plan mode earlier in the scrollback,
+# but has since exited. The live mode bar at the bottom shows the default
+# "bypass permissions" hint. The matcher must only inspect the TAIL
+# (last ~25 lines) so the stale plan banner doesn't false-trigger.
+#
+# Expected: classify_activity -> None, detect_mode -> "default"
+
+Earlier scrollback (should be ignored):
+
+❯ Think about how we'd refactor this
+  ⏸ plan mode on (shift+tab to cycle)
+
+⏺ Here's the plan I came up with. Approved — exiting plan mode.
+
+✻ Crunched for 2m 15s
+
+────────────────────────────────────────────────────────────
+
+⏺ Implementing step 1: refactor the token cache
+⏺ Implementing step 2: add the expiry handler
+⏺ Implementing step 3: wire up the retry loop
+⏺ Implementing step 4: update the config schema
+⏺ Implementing step 5: regenerate the OpenAPI client
+⏺ Implementing step 6: adjust the integration tests
+⏺ Implementing step 7: update the changelog
+⏺ Implementing step 8: bump the version number
+
+⏺ Running the test suite now…
+
+  ✓ test_token_cache_refresh
+  ✓ test_token_cache_expiry
+  ✓ test_retry_loop_on_503
+  ✓ test_retry_loop_on_504
+  ✓ test_config_schema_migration
+  ✓ test_openapi_client_regen
+  ✓ test_changelog_entry_present
+  ✓ test_version_bumped
+
+  All 8 tests passed. Changes applied.
+
+  Let me know if you want to iterate further.
+
+✻ Worked for 8m 12s
+
+─────────────────────────────────────────────────────────────────────────────── session ──
+❯
+───────────────────────────────────────────────────────────────────────────────────────────
+  hardinge@Mac ~/workspace main
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

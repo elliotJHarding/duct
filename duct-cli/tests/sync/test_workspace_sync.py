@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -251,3 +252,39 @@ class TestFullSync:
         assert result.tickets_synced == 2
         assert (t1 / "orchestrator" / "WORKSPACE.md").exists()
         assert (t2 / "orchestrator" / "WORKSPACE.md").exists()
+
+    def test_template_propagates_to_every_ticket_dir(self, tmp_path: Path):
+        """settings.template.json at root is merged into every ticket workspace."""
+        root = tmp_path / "workspace"
+        root.mkdir()
+
+        template = {"env": {"CLAUDE_CODE_ENABLE_TELEMETRY": "1"}}
+        (root / "settings.template.json").write_text(json.dumps(template))
+
+        with_repo = _make_ticket_dir(root, "ERSC-500-with-repo")
+        _make_git_repo(with_repo / "svc")
+        without_repo = _make_ticket_dir(root, "ERSC-501-without-repo")
+
+        result = WorkspaceSync().sync(root)
+
+        assert result.errors == []
+        assert result.tickets_synced == 2
+
+        for ticket in (with_repo, without_repo):
+            settings_path = ticket / ".claude" / "settings.json"
+            assert settings_path.exists(), f"missing settings for {ticket.name}"
+            assert json.loads(settings_path.read_text()) == template
+
+        # Root workspace settings file is NOT created by this sync step —
+        # telemetry is deliberately scoped to work sessions.
+        assert not (root / ".claude" / "settings.json").exists()
+
+    def test_no_template_leaves_ticket_settings_untouched(self, tmp_path: Path):
+        root = tmp_path / "workspace"
+        root.mkdir()
+        ticket = _make_ticket_dir(root, "ERSC-502-task")
+        _make_git_repo(ticket / "svc")
+
+        WorkspaceSync().sync(root)
+
+        assert not (ticket / ".claude" / "settings.json").exists()

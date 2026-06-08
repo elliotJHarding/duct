@@ -1,8 +1,6 @@
-"""duct TUI widgets."""
+"""Widget library for duct TUI."""
 
-from .tab_bar import TabBar
-from .sidebar import Sidebar
-from .content import ContentPanel
-from .footer import FooterBar
+from duct_tui.widgets.artifact_view import ArtifactView
+from duct_tui.widgets.ticket_summary_pane import TicketSummaryPane
 
-__all__ = ["TabBar", "Sidebar", "ContentPanel", "FooterBar"]
+__all__ = ["ArtifactView", "TicketSummaryPane"]

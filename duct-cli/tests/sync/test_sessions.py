@@ -316,6 +316,17 @@ class TestWriteSessionsMd:
         assert "**Recent conversation:**" in content
         assert "> **user**: Please refactor" in content
 
+    def test_writes_no_sessions_notice(self, tmp_path: Path):
+        ticket = _make_ticket_dir(tmp_path, "ERSC-103-task")
+
+        ss = SessionSync()
+        ss._write_sessions_md([], ticket)
+
+        content = (ticket / "orchestrator" / "CLAUDE_SESSIONS.md").read_text()
+        assert "No active or recent sessions." in content
+        assert "## Active" not in content
+        assert "## Recently Terminated" not in content
+
     def test_has_frontmatter(self, tmp_path: Path):
         ticket = _make_ticket_dir(tmp_path, "ERSC-102-task")
         sessions = [
@@ -397,3 +408,35 @@ class TestFullSync:
         result = ss.sync(root)
 
         assert result.tickets_synced == 0
+        # No pre-existing snapshot, so none is created for a sessionless ticket.
+        assert not (root / "ERSC-600-task" / "orchestrator" / "CLAUDE_SESSIONS.md").exists()
+
+    def test_sync_clears_stale_snapshot(self, tmp_path: Path):
+        """A snapshot left over from a now-dead session is rewritten, not frozen.
+
+        Reproduces the observed failure: a CLAUDE_SESSIONS.md saying "PID NNN —
+        active" survives long after the process and its registry/transcript are
+        gone, because sync used to skip tickets with no current sessions.
+        """
+        root = tmp_path / "workspace"
+        root.mkdir()
+        ticket = _make_ticket_dir(root, "ERSC-700-task")
+
+        stale = ticket / "orchestrator" / "CLAUDE_SESSIONS.md"
+        stale.write_text(
+            "---\nsource: sync\nsyncedAt: 2026-05-26T11:41:58Z\n---\n\n"
+            "# Claude Sessions\n\n## Active\n\n### PID 614 — active\n"
+        )
+
+        # Empty registry and projects — the session has fully aged out.
+        claude_dir = tmp_path / ".claude"
+        (claude_dir / "sessions").mkdir(parents=True)
+
+        ss = SessionSync(claude_dir=claude_dir)
+        result = ss.sync(root)
+
+        assert result.tickets_synced == 1
+        content = stale.read_text()
+        assert "PID 614" not in content
+        assert "## Active" not in content
+        assert "No active or recent sessions." in content
