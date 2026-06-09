@@ -101,7 +101,7 @@ class PRListPanel(VimListMixin, OptionList):
         pr: PullRequest,
         *,
         show_author: bool = False,
-        condensed: bool = False,
+        collapsed: bool = False,
         relative_time_str: str = "",
         action_reasons: list[str] | None = None,
         with_avatar: bool = False,
@@ -117,8 +117,8 @@ class PRListPanel(VimListMixin, OptionList):
             show_author=show_author,
             relative_time_str=relative_time_str or format_relative(pr.updated_at),
             action_reasons=tuple(action_reasons or ()),
-            condensed=condensed,
             compact=False,
+            collapsed=collapsed,
             avatar=avatar,
         )
         self.add_option(Option(rendered, id=f"{pr.repo}#{pr.number}:{ticket_key}"))
@@ -159,7 +159,7 @@ class PRListPanel(VimListMixin, OptionList):
         ]
 
         first = True
-        for label, bucket_id, entries, condensed in sections:
+        for label, bucket_id, entries, collapsed in sections:
             if not entries:
                 continue
             if not first:
@@ -183,10 +183,11 @@ class PRListPanel(VimListMixin, OptionList):
                 self._add_pr_row(
                     ticket_key,
                     pr,
-                    condensed=condensed,
+                    collapsed=collapsed,
                     action_reasons=reasons,
                 )
-                if i < len(clustered) - 1:
+                # Collapsed (done) rows pack together with no separator gaps.
+                if not collapsed and i < len(clustered) - 1:
                     self._add_separator()
 
     def update_review_list(self, entries: list[tuple[str, PullRequest]]) -> None:
@@ -198,13 +199,19 @@ class PRListPanel(VimListMixin, OptionList):
             return
 
         for i, (ticket_key, pr) in enumerate(entries):
+            done = pr.state in ("merged", "closed")
             self._add_pr_row(
                 ticket_key,
                 pr,
                 show_author=True,
-                with_avatar=self._show_avatars,
+                collapsed=done,
+                with_avatar=self._show_avatars and not done,
             )
-            if i < len(entries) - 1:
+            # Pack consecutive collapsed (done) rows together; gap otherwise.
+            next_done = (
+                i + 1 < len(entries) and entries[i + 1][1].state in ("merged", "closed")
+            )
+            if i < len(entries) - 1 and not (done and next_done):
                 self._add_separator()
 
     # ------------------------------------------------------------------ actions

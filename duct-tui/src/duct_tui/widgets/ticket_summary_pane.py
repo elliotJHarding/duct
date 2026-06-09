@@ -14,6 +14,7 @@ from textual.widgets.option_list import Option
 
 from duct.models import SessionInfo, TicketDetail
 from duct_tui.icons import Icons, UNICODE
+from duct_tui.widgets.pr_render import format_relative, render_collapsed_pr_line
 from duct_tui.widgets.ticket_badge import render_ticket_badge
 from duct_tui.widgets.session_panel import (
     _SPINNER_FRAMES,
@@ -144,21 +145,22 @@ class TicketSummaryPane(VimListMixin, OptionList):
             workspace_text.append(" to add", style="dim")
         self.add_option(Option(workspace_text, id="workspace:overview"))
 
-        # -- PRs: full PR list matching overview card --
+        # -- PRs: open PRs (2-line) first, then collapsed done PRs (1-line) --
         if detail.prs:
             self.add_option(self._separator())
+            open_prs = [pr for pr in detail.prs if pr.state not in ("merged", "closed")]
+            done_prs = [pr for pr in detail.prs if pr.state in ("merged", "closed")]
             pr_text = Text()
-            for i, pr in enumerate(detail.prs):
+            for i, pr in enumerate(open_prs):
                 if i > 0:
                     pr_text.append("\n\n")
                 pr_text.append(f"#{pr.number}", style="bold")
                 if pr.repo:
                     # Strip the org prefix — always the same, just clutter.
                     pr_text.append(f" {pr.repo.rsplit('/', 1)[-1]}")
-                # Status line
+                # Status line (this loop only renders open/draft PRs)
                 pr_text.append("\n")
-                state_color = "magenta" if pr.state == "merged" else "red" if pr.state == "closed" else "green"
-                pr_text.append(f"\u25cb {pr.state}", style=state_color)
+                pr_text.append(f"\u25cb {pr.state}", style="green")
                 if pr.ci_status in ("passing", "success"):
                     pr_text.append(f"  \u2713 CI", style="green")
                 elif pr.ci_status in ("failing", "failure"):
@@ -167,6 +169,17 @@ class TicketSummaryPane(VimListMixin, OptionList):
                     review_color = "green" if "approved" in pr.review_status.lower() else "red" if "change" in pr.review_status.lower() else "bright_black"
                     review_icon = "\u2713" if "approved" in pr.review_status.lower() else "\u2717" if "change" in pr.review_status.lower() else "\u25cb"
                     pr_text.append(f"  {review_icon} {pr.review_status}", style=review_color)
+            for j, pr in enumerate(done_prs):
+                if j == 0:
+                    if open_prs:
+                        pr_text.append("\n\n")  # blank line between groups
+                else:
+                    pr_text.append("\n")  # done rows packed together
+                pr_text.append_text(render_collapsed_pr_line(
+                    pr, self._icons,
+                    relative_time_str=format_relative(pr.updated_at),
+                    title_width=20,
+                ))
             self.add_option(Option(pr_text, id="pr:overview"))
 
         # -- Sessions: one item per active session, plus a launch row at the end --

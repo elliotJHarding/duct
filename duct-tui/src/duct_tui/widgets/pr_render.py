@@ -268,6 +268,76 @@ def _render_expanded_row(
     return t
 
 
+# Fixed column widths for the collapsed single-line layout. Fixing the side
+# columns is what lets independently-rendered rows line up: the title column
+# (ratio) absorbs the slack identically on every row, so the number, repo and
+# time columns sit at the same x on each line.
+_COLLAPSED_NUM_W = 8  # "{icon} #12345"
+_COLLAPSED_REPO_W = 18
+_COLLAPSED_TIME_W = 8
+
+
+def _fit(value: str, width: int) -> str:
+    """Truncate-with-ellipsis then pad `value` to exactly `width` cells."""
+    if width <= 0:
+        return ""
+    if len(value) > width:
+        return value[: width - 1] + "…" if width > 1 else "…"
+    return value.ljust(width)
+
+
+def render_collapsed_pr_row(
+    pr: PullRequest,
+    icons: Icons,
+    *,
+    relative_time_str: str = "",
+) -> Table:
+    """Single-line collapsed row for OptionList surfaces (PR tab, PR panel).
+
+    An expanding grid with fixed side columns and a flexible title column, so
+    rows line up across separately-rendered options and the time sits flush
+    right. The state icon + number carry the state colour (magenta merged /
+    red closed); everything else is dim, keeping the row low-importance.
+    """
+    state_icon, _state_label, state_color = pr_state_display(pr, icons)
+    num = Text(f"{state_icon} #{pr.number}", style=state_color)
+    title = Text(strip_leading_ticket(pr.title))
+    repo = Text(pr.repo.rsplit("/", 1)[-1] if pr.repo else "", style="dim")
+    rel = Text(relative_time_str, style="dim")
+
+    table = Table.grid(expand=True, padding=(0, 1, 0, 0))
+    table.add_column(width=_COLLAPSED_NUM_W, no_wrap=True)
+    table.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
+    table.add_column(width=_COLLAPSED_REPO_W, no_wrap=True, overflow="ellipsis")
+    table.add_column(width=_COLLAPSED_TIME_W, no_wrap=True, justify="right")
+    table.add_row(num, title, repo, rel)
+    return table
+
+
+def render_collapsed_pr_line(
+    pr: PullRequest,
+    icons: Icons,
+    *,
+    relative_time_str: str = "",
+    title_width: int,
+) -> Text:
+    """Single fixed-width line for narrow Text surfaces (overview card, summary
+    pane): `{icon} #{num}  {title}  {time}`.
+
+    Columns are space-padded to fixed widths so consecutive rows line up. Repo
+    is dropped here — these surfaces are narrow and the title is what matters.
+    """
+    t = Text()
+    state_icon, _state_label, state_color = pr_state_display(pr, icons)
+    t.append(f"{state_icon} ", style=state_color)
+    t.append(f"#{pr.number}".ljust(6), style=state_color)
+    t.append("  ")
+    t.append(_fit(strip_leading_ticket(pr.title), title_width))
+    if relative_time_str:
+        t.append(f"  {relative_time_str}", style="dim")
+    return t
+
+
 def render_pr_row(
     pr: PullRequest,
     icons: Icons,
@@ -278,6 +348,7 @@ def render_pr_row(
     action_reasons: tuple[str, ...] | list[str] = (),
     condensed: bool = False,
     compact: bool = True,
+    collapsed: bool = False,
     avatar: object | None = None,
 ) -> Text | Table:
     """Render a PR as a multi-line rich renderable, no continuation indents.
@@ -287,11 +358,16 @@ def render_pr_row(
     - `compact=False`: 3-line layout used by the PR tab. Returns `Text` unless
       `avatar` is supplied, in which case a two-column `Table` places the
       avatar to the left of the text block.
+    - `collapsed=True` (only meaningful when `compact=False`): single-line
+      layout for done PRs. Avatars are ignored.
 
     `avatar` is any Rich renderable (e.g. a `textual_image` halfcell image or a
     small initials badge) — it's positioned to the left of the row so it reads
     like a chat-style avatar.
     """
+    if not compact and collapsed:
+        return render_collapsed_pr_row(pr, icons, relative_time_str=relative_time_str)
+
     if compact:
         return _render_compact_row(
             pr,

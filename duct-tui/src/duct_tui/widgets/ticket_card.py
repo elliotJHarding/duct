@@ -21,6 +21,27 @@ from duct_tui.widgets.ticket_badge import render_ticket_badge
 CARD_CONTENT_WIDTH = 48  # 56 (width) - 2 (border) - 6 (padding 3+3)
 SEPARATOR = "\u2500" * CARD_CONTENT_WIDTH
 
+
+def _is_done(pr) -> bool:
+    return pr.state in ("merged", "closed")
+
+
+def card_pr_line_count(prs) -> int:
+    """Lines the PR section occupies: open PRs take 2 lines (with a blank
+    between), done PRs collapse to 1 line packed together, plus one blank line
+    separating the open block from the done block. Shared with the height
+    normaliser so every card reserves the same space."""
+    open_prs = [p for p in prs if not _is_done(p)]
+    done_prs = [p for p in prs if _is_done(p)]
+    lines = 0
+    if open_prs:
+        lines += len(open_prs) * 2 + (len(open_prs) - 1)
+    if done_prs:
+        if open_prs:
+            lines += 1
+        lines += len(done_prs)
+    return lines
+
 # Artifacts render as two columns; each cell gets half the card width minus
 # the icon + single trailing space, with one extra space between cells.
 _ARTIFACT_CELL_WIDTH = (CARD_CONTENT_WIDTH - 1) // 2 - 2
@@ -183,8 +204,12 @@ class TicketCard(Widget, can_focus=True):
             t.append("\n")
 
     def _render_prs(self, t: Text, o, h, ic: Icons) -> None:
+        # Open PRs render as before (2 lines); done PRs (merged/closed) collapse
+        # to a single packed line at the bottom — no group heading.
+        open_prs = [pr for pr in o.prs if not _is_done(pr)]
+        done_prs = [pr for pr in o.prs if _is_done(pr)]
         actual = 0
-        for i, pr in enumerate(o.prs):
+        for i, pr in enumerate(open_prs):
             if i > 0:
                 t.append("\n")
                 actual += 1
@@ -217,6 +242,25 @@ class TicketCard(Widget, can_focus=True):
             t.append_text(status_line)
             t.append("\n")
             actual += 1
+
+        if done_prs and open_prs:
+            t.append("\n")
+            actual += 1
+        # PRSummary (overview's PR type) has no title/timestamp, so the
+        # collapsed line shows the repo — the only at-a-glance identifier here.
+        # Fixed-width number column keeps the repos lined up across rows.
+        for pr in done_prs:
+            state_icon, _label, state_color = pr_state_display(pr, ic)
+            line = Text()
+            line.append(f"{state_icon} ", style=state_color)
+            line.append(f"#{pr.number}".ljust(6), style=state_color)
+            line.append("  ")
+            repo_short = pr.repo.rsplit("/", 1)[-1] if pr.repo else ""
+            line.append(_truncate(repo_short, CARD_CONTENT_WIDTH - 10), style="dim")
+            t.append_text(line)
+            t.append("\n")
+            actual += 1
+
         for _ in range(h.prs - actual):
             t.append("\n")
 

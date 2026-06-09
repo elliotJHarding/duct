@@ -14,6 +14,8 @@ from rich.text import Text
 from duct.models import PullRequest, Reviewer
 from duct_tui.icons import UNICODE
 from duct_tui.widgets.pr_render import (
+    render_collapsed_pr_line,
+    render_collapsed_pr_row,
     render_pr_row,
     strip_leading_ticket,
 )
@@ -143,3 +145,84 @@ class TestRenderPrRowExpanded:
             avatar=avatar,
         )
         assert isinstance(result, Table)
+
+
+class TestRenderCollapsedPrRow:
+    """render_collapsed_pr_row: the expanding grid used by OptionList surfaces.
+
+    render_pr_row(compact=False, collapsed=True) routes here too.
+    """
+
+    def test_returns_table(self) -> None:
+        result = render_collapsed_pr_row(_make_pr(state="merged"), UNICODE)
+        assert isinstance(result, Table)
+
+    def test_render_pr_row_collapsed_routes_to_table(self) -> None:
+        result = render_pr_row(
+            _make_pr(state="merged"),
+            UNICODE,
+            compact=False,
+            collapsed=True,
+        )
+        assert isinstance(result, Table)
+
+    def _cells(self, **overrides) -> list[Text]:
+        # The grid is built with one add_row(num, title, repo, time); the column
+        # cells are the Text renderables we passed in.
+        table = render_collapsed_pr_row(
+            _make_pr(**overrides), UNICODE, relative_time_str="2d ago",
+        )
+        return [col._cells[0] for col in table.columns]
+
+    def test_columns_carry_number_title_repo_time(self) -> None:
+        num, title, repo, rel = self._cells(state="merged")
+        assert "#42" in num.plain
+        # Leading ticket prefix stripped from the title cell.
+        assert "PS-123: Fix thing" not in title.plain
+        assert "Fix thing" in title.plain
+        assert "backend" in repo.plain
+        assert "2d ago" in rel.plain
+
+    def test_merged_number_cell_is_magenta(self) -> None:
+        num, *_ = self._cells(state="merged")
+        assert "magenta" in str(num.style)
+
+    def test_closed_number_cell_is_red(self) -> None:
+        num, *_ = self._cells(state="closed")
+        assert "red" in str(num.style)
+
+
+class TestRenderCollapsedPrLine:
+    """render_collapsed_pr_line: the fixed-width single line for card/summary."""
+
+    def _line(self, **overrides) -> Text:
+        return render_collapsed_pr_line(
+            _make_pr(**overrides),
+            UNICODE,
+            relative_time_str="2d ago",
+            title_width=20,
+        )
+
+    def test_single_line(self) -> None:
+        assert "\n" not in self._line(state="merged").plain
+
+    def test_shows_number_title_time(self) -> None:
+        plain = self._line(state="merged").plain
+        assert "#42" in plain
+        assert "Fix thing" in plain
+        assert "2d ago" in plain
+
+    def test_title_padded_to_fixed_width_for_alignment(self) -> None:
+        # A short and a long title must place the trailing time at the same
+        # column, so consecutive rows line up.
+        short = self._line(state="merged", title="PS-1: Hi")
+        long = self._line(
+            state="merged", title="PS-1: A considerably longer title than fits",
+        )
+        assert short.plain.index("2d ago") == long.plain.index("2d ago")
+
+    def test_merged_uses_magenta(self) -> None:
+        assert any("magenta" in str(s.style) for s in self._line(state="merged").spans)
+
+    def test_closed_uses_red(self) -> None:
+        assert any("red" in str(s.style) for s in self._line(state="closed").spans)

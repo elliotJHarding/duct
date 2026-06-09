@@ -11,7 +11,12 @@ from textual.widgets import Static
 
 from duct_tui.icons import Icons, get_icons
 from duct_tui.phases import phase_for_category
-from duct_tui.widgets.ticket_card import CARD_CONTENT_WIDTH, SectionHeights, TicketCard
+from duct_tui.widgets.ticket_card import (
+    CARD_CONTENT_WIDTH,
+    SectionHeights,
+    TicketCard,
+    card_pr_line_count,
+)
 from duct_tui.widgets.vim_mixin import VimListMixin
 
 
@@ -131,7 +136,7 @@ class TicketCardList(VimListMixin, HorizontalScroll):
             if o.repos:
                 max_repos = max(max_repos, len(o.repos))
             if o.prs:
-                max_prs = max(max_prs, len(o.prs) * 3 - 1)
+                max_prs = max(max_prs, card_pr_line_count(o.prs))
             if o.sessions:
                 max_sessions = max(max_sessions, len(o.sessions) * 2)
             if o.tasks:
