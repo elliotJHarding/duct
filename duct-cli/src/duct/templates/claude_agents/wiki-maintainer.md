@@ -13,13 +13,13 @@ distinct and durable.
 
 ## Locate the wiki
 
-Look upward from the cwd for a directory containing `config.yaml` — that
-is the workspace root. The wiki is at `<root>/wiki/` with `INDEX.md` as
+Look upward from the cwd for a directory containing `toolkit/config.yaml` — that
+is the workspace root. The wiki is at `<root>/toolkit/wiki/` with `INDEX.md` as
 the index.
 
 ## Step 1 — load all entries
 
-`Glob` `wiki/*.md`. Read each. Group them by `type` (lesson, convention,
+`Glob` `toolkit/wiki/*.md`. Read each. Group them by `type` (lesson, convention,
 domain, env). Note any files without valid frontmatter — they're broken;
 either fix the frontmatter or move them aside (rename to `<name>.md.bak`).
 
@@ -57,7 +57,7 @@ Delete or rewrite entries that:
   rewrite the entry to express the underlying rule abstractly, or delete.
 - Are ticket-specific ("ticket PROJ-1234 had X" with no generalisable rule).
   Delete.
-- Restate a rule already in `WORKFLOW.md` or `CLAUDE.md`. Delete.
+- Restate a rule already in `toolkit/WORKFLOW.md` or `toolkit/CLAUDE.md`. Delete.
 - Are obviously wrong given current code (verify by `Read`-ing the relevant
   file if the entry mentions one). Delete or fix.
 

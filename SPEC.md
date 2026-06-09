@@ -74,11 +74,18 @@ The duct workspace is a configurable root directory that contains all active wor
 
 ```
 {workspace_root}/
-    PRIORITY.md
-    WORKFLOW.md
-    config.yaml
-    .claude/
-        CLAUDE.md                    # persistent context for orchestrator sessions
+    toolkit/                         # tracked config + knowledge (its own git repo)
+        config.yaml
+        WORKFLOW.md
+        CLAUDE.md                    # canonical orientation for sessions
+        agents/                      # reusable session prompts
+        wiki/                        # curated knowledge base (INDEX.md + entries)
+        subagents/                   # wiki-reader / -contributor / -maintainer
+        settings.template.json
+    .claude/                         # generated from toolkit/ (CLAUDE.md shim + agent copies)
+    .duct/                           # runtime state: daemon.json, orchestrator.lock,
+                                     #   notifications.jsonl, runs/, activity/, cache/,
+                                     #   sync_state.yaml, review_prs.md, actions.yaml
 
     epics/
         {EPIC_KEY}-{epic-title}.md   # epic metadata (source: sync)
@@ -91,8 +98,8 @@ The duct workspace is a configurable root directory that contains all active wor
             CI.md                    # sync snapshot: build/deploy status
             CLAUDE_SESSIONS.md       # sync snapshot: active Claude sessions
             WORKSPACE.md             # sync snapshot: local workspace state
-            PROPOSED_ACTIONS.md      # orchestrator: actions awaiting approval
-            BACKGROUND.md            # authored: business context research
+            actions.yaml             # orchestrator: proposed actions for this ticket
+            RESEARCH.md              # authored: business context research
             AC.md                    # authored: detailed acceptance criteria
             SPEC.md                  # authored: technical specification
             IMPLEMENTATION.md        # authored: explanation of changes
@@ -133,12 +140,21 @@ Worktrees are created during workspace setup. The orchestrator (or developer) de
 
 Workspace creation is collaborative: the orchestrator proposes repos and branches, the developer can granularly accept, modify, or add repos manually.
 
-### Root-level files
+### The toolkit/ folder
 
-- **PRIORITY.md** — Shared priority list. Both the developer and orchestrator can edit this. The orchestrator uses it to decide what to focus on and can update it based on observed signals.
-- **WORKFLOW.md** — The orchestrator's reference guide. Describes the development lifecycle, what "good" looks like, and how to reason about next steps. This file is guidance, not enforcement.
-- **config.yaml** — Workspace-level configuration (data sources, sync intervals, trust tiers, repo paths).
-- **.claude/CLAUDE.md** — Persistent context for orchestrator sessions. Describes the workspace structure, conventions, and references WORKFLOW.md. This file is loaded automatically by Claude Code when sessions launch from the workspace root.
+Tracked config and knowledge live together in `toolkit/`, which is its own git repo so it
+can be versioned and carried between machines independently of the (machine-local) ticket
+state and runtime files.
+
+- **toolkit/WORKFLOW.md** — The orchestrator's reference guide. Describes the development lifecycle, what "good" looks like, and how to reason about next steps. This file is guidance, not enforcement.
+- **toolkit/config.yaml** — Workspace-level configuration (data sources, sync intervals, repo paths). Its presence marks the workspace root.
+- **toolkit/CLAUDE.md** — Canonical orientation for sessions. Describes the workspace structure, conventions, and references WORKFLOW.md.
+- **toolkit/agents/**, **toolkit/wiki/**, **toolkit/subagents/** — reusable session prompts, the curated knowledge base, and the wiki subagent definitions.
+
+The workspace root carries a generated `.claude/` materialised from `toolkit/`: a `CLAUDE.md`
+that `@`-imports `toolkit/CLAUDE.md` and the wiki index, plus copies of the wiki subagents.
+This is what Claude Code loads automatically when sessions launch from the workspace root or a
+ticket subdirectory; `duct setup`/`duct doctor` regenerate it from `toolkit/`.
 
 
 ## Data Sources and Sync

@@ -48,7 +48,7 @@ A ticket is done when all relevant concerns are addressed. Not every concern app
 
 What "good" looks like for each authored artifact:
 
-- **RESEARCH.md** — Captures the problem being solved, the business motivation, relevant domain context, and related tickets/history. A developer reading this should understand *why* this work matters without needing to read the Jira ticket. Also identifies the relevant repos and release branches / code versions to reference, and lists which `wiki/` entries informed it.
+- **RESEARCH.md** — Captures the problem being solved, the business motivation, relevant domain context, and related tickets/history. A developer reading this should understand *why* this work matters without needing to read the Jira ticket. Also identifies the relevant repos and release branches / code versions to reference, and lists which `toolkit/wiki/` entries informed it.
 - **AC.md** — Specific, testable criteria. Goes beyond Jira AC to include technical requirements, edge cases, and definition of done. Each criterion should be verifiable.
 - **SPEC.md** — Design decisions, approach, affected components, class/module layout, delivery and PR plan. Explains *how* the work will be done. Should be proportional to complexity — a one-line config change doesn't need a spec. Cross-references AC.md (*what*) rather than duplicating it, and records design decisions as numbered Open items for tech-lead sign-off.
 - **IMPLEMENTATION.md** — Written after implementation. Explains what changed and why. The narrative companion to the diff.
@@ -122,7 +122,7 @@ The orchestrator's prompt includes trust levels for each action type (auto, prop
 ## Proposing Actions
 
 When your trust level for an action is "propose":
-- Write the proposal to `{ticket}/orchestrator/actions.yaml` (ticket-scoped) or `.actions.yaml` at the workspace root (cross-cutting) using the shapes in the Agents / Actions sections
+- Write the proposal to `{ticket}/orchestrator/actions.yaml` (ticket-scoped) or `.duct/actions.yaml` (cross-cutting) using the shapes in the Agents / Actions sections
 - Include in `description` what specifically you're proposing, and in `detail.prompt` the evidence (sync snapshots, artifact state) and any context the developer needs to approve or reject it
 - One action per intent — don't bundle unrelated actions
 - Do not re-emit an action the developer has already rejected unless circumstances have materially changed (and explain what changed)
@@ -133,7 +133,7 @@ Be conservative with external actions. When uncertain, write observations to ORC
 
 ## Agents
 
-Reusable session prompts live under `agents/` at the workspace root. Each agent is a markdown file with YAML frontmatter (`name`, optional `description`) whose body becomes the session prompt. Agents exist so developers and the orchestrator can reach for a known-good prompt instead of composing a new one each time.
+Reusable session prompts live under `toolkit/agents/`. Each agent is a markdown file with YAML frontmatter (`name`, optional `description`) whose body becomes the session prompt. Agents exist so developers and the orchestrator can reach for a known-good prompt instead of composing a new one each time.
 
 This section is the authoritative source for **when** to propose each agent. The agent body describes *how* it does its work; WORKFLOW.md describes *when* it should run and what should already be in place. When an agent fits an unmet concern, prefer it over a free-form prompt.
 
@@ -151,7 +151,7 @@ actions:
     created_at: "<iso-8601>"
 ```
 
-`detail.agent` is a name-by-reference to `agents/<name>.md`. The body is resolved at approval time, so later edits to the agent file take effect.
+`detail.agent` is a name-by-reference to `toolkit/agents/<name>.md`. The body is resolved at approval time, so later edits to the agent file take effect.
 
 When no existing agent fits — e.g. an implementation brief that references specific files and methods — emit a free-form prompt in the same file:
 
@@ -170,7 +170,7 @@ actions:
     created_at: "<iso-8601>"
 ```
 
-The filesystem is the source of truth. List `agents/*.md` to discover what is actually available in this workspace. Don't name an agent that doesn't exist; use a free-form prompt instead.
+The filesystem is the source of truth. List `toolkit/agents/*.md` to discover what is actually available in this workspace. Don't name an agent that doesn't exist; use a free-form prompt instead.
 
 ### `workspace`
 
@@ -189,7 +189,7 @@ The filesystem is the source of truth. List `agents/*.md` to discover what is ac
 
 ### `research`
 
-**Produces:** `orchestrator/RESEARCH.md`, and contributes any durable lessons to the workspace `wiki/` via the `wiki-contributor` subagent.
+**Produces:** `orchestrator/RESEARCH.md`, and contributes any durable lessons to the workspace `toolkit/wiki/` via the `wiki-contributor` subagent.
 
 **Propose when:** the ticket has no RESEARCH.md and is either a feature ticket or a non-trivial bug.
 
@@ -239,19 +239,19 @@ The filesystem is the source of truth. List `agents/*.md` to discover what is ac
 
 ### `wiki-contributor`
 
-**Produces:** zero or more `wiki/<name>.md` entries plus an updated `wiki/INDEX.md` row per entry, captured eagerly from the calling session's exchange.
+**Produces:** zero or more `toolkit/wiki/<name>.md` entries plus an updated `toolkit/wiki/INDEX.md` row per entry, captured eagerly from the calling session's exchange.
 
 **Propose when:** almost never — sessions invoke it implicitly when corrected, when addressing PR comments, when given non-obvious opening context, when fixing build/test/env issues, and as an end-of-task pass. The orchestrator does not need to propose it.
 
 **Do not propose when:** there is no active session to evaluate. The contributor needs a live conversation or transcript.
 
-**Preconditions:** none. The contributor reads `wiki/INDEX.md` itself before writing.
+**Preconditions:** none. The contributor reads `toolkit/wiki/INDEX.md` itself before writing.
 
-**After it runs:** new lessons are captured in `wiki/`. Most invocations write at least one entry.
+**After it runs:** new lessons are captured in `toolkit/wiki/`. Most invocations write at least one entry.
 
 ### `wiki-maintainer`
 
-**Produces:** dedupe / prune / consolidate of `wiki/`, with a rebuilt `INDEX.md` alphabetised within type sections.
+**Produces:** dedupe / prune / consolidate of `toolkit/wiki/`, with a rebuilt `INDEX.md` alphabetised within type sections.
 
 **Propose when:** weekly cadence (no maintainer run in the last 7 days), OR on-demand when the wiki has >50 entries or `INDEX.md` exceeds 200 lines, OR when the contributor reports an oversized index in its final message.
 
@@ -263,11 +263,11 @@ The filesystem is the source of truth. List `agents/*.md` to discover what is ac
 
 ## Workspace wiki
 
-The `wiki/` folder at the workspace root is a curated knowledge base shared across all sessions. It captures four kinds of entry: **lessons** (mistakes corrected during sessions), **conventions** (project patterns surfaced during work), **domain knowledge** (what fields mean, why a workflow exists), and **environment quirks** (build, sandbox, tooling gotchas). It is the durable counterpart to per-ticket `orchestrator/RESEARCH.md` and replaces the older `research/` folder concept.
+The `toolkit/wiki/` folder is a curated knowledge base shared across all sessions. It captures four kinds of entry: **lessons** (mistakes corrected during sessions), **conventions** (project patterns surfaced during work), **domain knowledge** (what fields mean, why a workflow exists), and **environment quirks** (build, sandbox, tooling gotchas). It is the durable counterpart to per-ticket `orchestrator/RESEARCH.md` and replaces the older `research/` folder concept.
 
 The wiki is curated by three Claude Code subagents shipped with duct: `wiki-reader`, `wiki-contributor`, `wiki-maintainer`. Sessions invoke them implicitly via the per-ticket and workspace-root `CLAUDE.md` instructions — there are no hooks. Direct invocation (`Task` tool, `subagent_type: "wiki-reader"`) is the supported entry point.
 
-**Format.** Each entry is `wiki/<name>.md` with frontmatter `name`, `type` (one of `lesson` / `convention` / `domain` / `env`), `description`, optional `tags`. Body sections: **Rule**, **Why**, **How to apply**.
+**Format.** Each entry is `toolkit/wiki/<name>.md` with frontmatter `name`, `type` (one of `lesson` / `convention` / `domain` / `env`), `description`, optional `tags`. Body sections: **Rule**, **Why**, **How to apply**.
 
 **INDEX.md.** Single agent-facing TOC kept under 200 lines so it always fits in context. The contributor appends rows when it writes; the maintainer rebuilds it on review.
 

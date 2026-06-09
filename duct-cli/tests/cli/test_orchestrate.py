@@ -74,7 +74,7 @@ class TestOrchestrate:
             assert tool in result.output
 
     def test_dry_run_always_includes_stream_json(self, tmp_path: Path) -> None:
-        """stream-json is always requested so runs can be recorded to .runs/."""
+        """stream-json is always requested so runs can be recorded to .duct/runs/."""
         _init_workspace(tmp_path)
         runner = CliRunner()
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
@@ -151,7 +151,7 @@ class TestPromptContent:
         """
         prompt = build_prompt(None).lower()
         assert "improve_workflow" in prompt
-        assert ".actions.yaml" in prompt
+        assert ".duct/actions.yaml" in prompt
         # Broad framing markers
         assert "friction" in prompt
         assert "context" in prompt
@@ -329,4 +329,4 @@ class TestRunRecorder:
 class TestOrchestratorPromptReferencesRuns:
     def test_prompt_mentions_runs_dir(self) -> None:
         prompt = build_prompt(None)
-        assert ".runs/" in prompt
+        assert ".duct/runs/" in prompt

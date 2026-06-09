@@ -12,6 +12,7 @@ COMMANDS = {
     "daemon": "duct.cli.daemon_cmd:daemon",
     "doctor": "duct.cli.doctor_cmd:doctor",
     "init": "duct.cli.init_cmd:init",
+    "migrate-layout": "duct.cli.migrate_cmd:migrate_layout",
     "orchestrate": "duct.cli.orchestrate_cmd:orchestrate",
     "pr": "duct.cli.pr_cmd:pr",
     "session": "duct.cli.session_cmd:session",
@@ -25,8 +26,9 @@ COMMANDS = {
 
 # Commands that should not appear in tab completion or `--help` output.
 # ``init`` is preserved as a hidden, scriptable entry point so tests and CI
-# can scaffold a workspace without going through the interactive flow.
-HIDDEN_COMMANDS = frozenset({"init"})
+# can scaffold a workspace without going through the interactive flow;
+# ``migrate-layout`` is a one-time internal migration, not user-facing.
+HIDDEN_COMMANDS = frozenset({"init", "migrate-layout"})
 
 
 class LazyGroup(click.Group):

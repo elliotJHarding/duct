@@ -85,8 +85,9 @@ def _step_workspace(default: Path) -> Path:
     _explain(
         "The workspace is where duct mirrors your Jira tickets as local "
         "folders, one per ticket. We'll create the directory if it doesn't "
-        "exist and seed it with WORKFLOW.md, a .claude/ agents folder, and "
-        "an empty wiki.",
+        "exist and seed a toolkit/ folder holding config.yaml, WORKFLOW.md, "
+        "agents/, wiki/, and subagents/; a root .claude/ folder is generated "
+        "from it.",
         "Press Enter to accept the default, or type a different path.",
     )
     prompt = "Workspace path"
@@ -643,7 +644,7 @@ def run_setup(ctx: click.Context) -> None:
         click.echo(
             "duct setup needs an interactive terminal. Re-run from a TTY, "
             "or pre-populate the keychain (via `keyring set duct jira_token`) "
-            "and config.yaml.",
+            "and toolkit/config.yaml.",
             err=True,
         )
         ctx.exit(1)

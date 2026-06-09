@@ -36,7 +36,7 @@ export JIRA_TOKEN="your-jira-api-token"
 export GH_TOKEN="your-github-pat"
 ```
 
-Edit `config.yaml` in your workspace root to configure the Jira domain, JQL query, repo paths, trust tiers, and sync intervals.
+Edit `toolkit/config.yaml` in your workspace to configure the Jira domain, JQL query, repo paths, and sync intervals.
 
 ## Commands
 
@@ -66,26 +66,34 @@ All commands support `--json` for structured output and `--workspace-root` to ov
 
 ```
 {workspace_root}/
-    config.yaml
-    WORKFLOW.md
-    .claude/CLAUDE.md
-    {EPIC_KEY}-{slug}/
-        {TICKET_KEY}-{slug}/
-            orchestrator/
-                TICKET.md              # sync: Jira data
-                PULL_REQUESTS.md       # sync: GitHub PRs
-                CI.md                  # sync: build status
-                CLAUDE_SESSIONS.md     # sync: active sessions
-                WORKSPACE.md           # sync: git state
-                BACKGROUND.md          # authored: context
-                AC.md                  # authored: acceptance criteria
-                SPEC.md                # authored: technical spec
-                ORCHESTRATOR.md        # authored: working notes
-            repo-worktree/
+    toolkit/                       # tracked config + knowledge (its own git repo)
+        config.yaml
+        WORKFLOW.md
+        CLAUDE.md
+        agents/                    # reusable session prompts
+        wiki/                      # curated knowledge base (INDEX.md + entries)
+        subagents/                 # wiki-reader / -contributor / -maintainer
+        settings.template.json
+    .claude/                       # generated from toolkit/ (CLAUDE.md shim + agent copies)
+    .duct/                         # runtime state (daemon, runs/, activity/, cache/,
+                                   #   sync_state.yaml, review_prs.md, actions.yaml)
+    epics/                         # epic metadata
+    {TICKET_KEY}-{slug}/           # ticket dirs live flat at the workspace root
+        orchestrator/
+            TICKET.md              # sync: Jira data
+            PULL_REQUESTS.md       # sync: GitHub PRs
+            CI.md                  # sync: build status
+            CLAUDE_SESSIONS.md     # sync: active sessions
+            WORKSPACE.md           # sync: git state
+            RESEARCH.md            # authored: context
+            AC.md                  # authored: acceptance criteria
+            SPEC.md                # authored: technical spec
+            ORCHESTRATOR.md        # authored: working notes
+        repo-worktree/
     .archive/
 ```
 
-Files with `source: sync` frontmatter are overwritten each sync cycle. Authored files are created by the developer or orchestrator and persist.
+Files with `source: sync` frontmatter are overwritten each sync cycle. Authored files are created by the developer or orchestrator and persist. `toolkit/` is a git repo you can track and carry between machines; everything else is machine-local state.
 
 ## Development
 

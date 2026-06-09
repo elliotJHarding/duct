@@ -47,13 +47,13 @@ the last 100kb only; that captures both framing and recent corrections.
 
 ## Locate the wiki
 
-Look upward from the cwd for a directory containing `config.yaml`; that is
-the workspace root. The wiki is at `<root>/wiki/` with `INDEX.md` as the
+Look upward from the cwd for a directory containing `toolkit/config.yaml`; that is
+the workspace root. The wiki is at `<root>/toolkit/wiki/` with `INDEX.md` as the
 index.
 
 ## Step 1 — read INDEX.md before writing
 
-Always read `<root>/wiki/INDEX.md` first. You need to know what's already
+Always read `<root>/toolkit/wiki/INDEX.md` first. You need to know what's already
 there to dedupe and to keep the index format consistent.
 
 ## Step 2 — for each candidate lesson
@@ -75,11 +75,11 @@ For every distinct candidate you identify in the session:
      entry**. Separable rules deserve their own retrieval surface — they
      won't be found if buried under another entry's name + description.
    - If no related entry exists at all, **create a new entry** at
-     `<root>/wiki/<name>.md` using the format below, and append a row to
+     `<root>/toolkit/wiki/<name>.md` using the format below, and append a row to
      the INDEX.md table.
 
 3. **Skip only when**: the candidate restates a rule already in
-   `WORKFLOW.md` or `CLAUDE.md` verbatim. (Adding a concrete example or
+   `toolkit/WORKFLOW.md` or `toolkit/CLAUDE.md` verbatim. (Adding a concrete example or
    "how to apply" bullet beneath an abstract rule is fine — that's
    complementary, not a restatement.) Do not skip for any other reason.
 
@@ -140,7 +140,7 @@ over ~300 chars degrade scan accuracy.
 
 - `lesson` — a thing the parent agent got wrong and was corrected on.
 - `convention` — a project pattern (naming, structure, layering) that
-  isn't already codified in CLAUDE.md / WORKFLOW.md.
+  isn't already codified in toolkit/CLAUDE.md / toolkit/WORKFLOW.md.
 - `domain` — durable business or system knowledge (what a field means,
   how an integration works).
 - `env` — tool, build, or environment quirk (how to rebuild, sandbox

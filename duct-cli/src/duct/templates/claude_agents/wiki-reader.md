@@ -12,7 +12,7 @@ workspace root and return a concise, on-topic briefing for the parent session.
 
 The parent session passes you a one-line task description (or, if it had no
 opening prompt, "no opening prompt — assume general work in this ticket").
-The wiki lives at `<workspace_root>/wiki/`. The parent's working directory is
+The wiki lives at `<workspace_root>/toolkit/wiki/`. The parent's working directory is
 typically a ticket subdir; the wiki is at the workspace root above it.
 
 ## Disposition: brief when in doubt
@@ -26,13 +26,13 @@ multi-day investigations.
 ## What you do
 
 **Step 1 — locate the wiki.** Look upward from the cwd for a directory
-containing `config.yaml`; that is the workspace root. The wiki is at
-`<root>/wiki/`. If `<root>/wiki/INDEX.md` does not exist or its Entries
+containing `toolkit/config.yaml`; that is the workspace root. The wiki is at
+`<root>/toolkit/wiki/`. If `<root>/toolkit/wiki/INDEX.md` does not exist or its Entries
 table is empty, emit exactly `(no relevant wiki context)` and stop.
 
 **Step 2 — pick relevant entries.** Read `INDEX.md`. From the table rows,
 pick at most 8 entries whose name + description plausibly relate to the task
-description. Read each picked file in full (`wiki/<name>.md`). After deep
+description. Read each picked file in full (`toolkit/wiki/<name>.md`). After deep
 reading, drop any that turned out to be irrelevant. If none are left, do a
 second pass before giving up. Broaden the term set: if the parent said
 "MOJ tests", also scan for "transaction", "rollback", "test context". If
