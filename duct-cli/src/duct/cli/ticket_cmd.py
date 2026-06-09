@@ -165,10 +165,10 @@ def ticket_open(ctx: click.Context, key: str) -> None:
         output(f"Opened {url}")
 
 
-@ticket.command("show")
+@ticket.command("status")
 @click.argument("key")
 @click.pass_context
-def ticket_show(ctx: click.Context, key: str) -> None:
+def ticket_status(ctx: click.Context, key: str) -> None:
     """Show ticket details and artifact inventory."""
     try:
         root = resolve_root(ctx)

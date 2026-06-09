@@ -10,7 +10,9 @@ from pathlib import Path
 
 import click
 
+from duct.cli.completion_cmd import completion
 from duct.cli.output import error, get_json_mode, output, section, success, warn
+from duct.cli.perf_cmd import perf_cmd
 from duct.cli.resolve import resolve_root
 from duct.credentials import resolve_gh_token, resolve_jira_email, resolve_jira_token
 
@@ -38,10 +40,21 @@ def _suggest(label: str, fix_cmd: str, apply_fn: Callable[[], None] | None = Non
     return False
 
 
-@click.command()
+@click.group(invoke_without_command=True)
 @click.pass_context
 def doctor(ctx: click.Context) -> None:
-    """Validate workspace configuration, credentials, and prerequisites."""
+    """Validate workspace configuration, credentials, and prerequisites.
+
+    With no subcommand this runs the health check. Diagnostics live under it:
+    ``doctor perf`` (timing stats) and ``doctor completion`` (shell completion).
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    _run_health_check(ctx)
+
+
+def _run_health_check(ctx: click.Context) -> None:
+    """Run the full prerequisite-chain health check."""
     all_ok = True
 
     # 1. Workspace root
@@ -220,3 +233,7 @@ def doctor(ctx: click.Context) -> None:
     else:
         warn("Some checks failed. Fix the issues above and re-run 'duct doctor'.")
         ctx.exit(1)
+
+
+doctor.add_command(perf_cmd, "perf")
+doctor.add_command(completion, "completion")

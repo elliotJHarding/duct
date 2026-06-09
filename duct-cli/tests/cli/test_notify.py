@@ -44,7 +44,7 @@ def _invoke(root: Path, *args) -> tuple:
     runner = CliRunner()
     with patch("duct.cli.notify_cmd.MacNotifier", side_effect=_factory):
         result = runner.invoke(
-            cli, ["--workspace-root", str(root), "notify", *args]
+            cli, ["--workspace-root", str(root), "daemon", "notify", *args]
         )
     return result, captured.get("notifier")
 

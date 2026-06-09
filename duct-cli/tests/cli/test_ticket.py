@@ -108,7 +108,7 @@ class TestTicketShow:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["--workspace-root", str(tmp_path), "ticket", "show", "ERSC-100"]
+            cli, ["--workspace-root", str(tmp_path), "ticket", "status", "ERSC-100"]
         )
 
         assert result.exit_code == 0, result.output
@@ -122,7 +122,7 @@ class TestTicketShow:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["--workspace-root", str(tmp_path), "ticket", "show", "ERSC-999"]
+            cli, ["--workspace-root", str(tmp_path), "ticket", "status", "ERSC-999"]
         )
 
         assert result.exit_code != 0
@@ -136,7 +136,7 @@ class TestTicketShow:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["--json", "--workspace-root", str(tmp_path), "ticket", "show", "ERSC-100"]
+            cli, ["--json", "--workspace-root", str(tmp_path), "ticket", "status", "ERSC-100"]
         )
 
         assert result.exit_code == 0, result.output
@@ -153,7 +153,7 @@ class TestTicketShow:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["--workspace-root", str(tmp_path), "ticket", "show", "ERSC-100"]
+            cli, ["--workspace-root", str(tmp_path), "ticket", "status", "ERSC-100"]
         )
 
         assert result.exit_code == 0, result.output

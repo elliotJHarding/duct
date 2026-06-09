@@ -242,7 +242,7 @@ class TestPrReview:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["--json", "--workspace-root", str(tmp_path), "pr", "review"]
+            cli, ["--json", "--workspace-root", str(tmp_path), "pr", "review", "list"]
         )
         assert result.exit_code == 0, result.output
         data = json.loads(result.output.strip())
@@ -258,7 +258,7 @@ class TestPrReview:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["--workspace-root", str(tmp_path), "pr", "review"]
+            cli, ["--workspace-root", str(tmp_path), "pr", "review", "list"]
         )
         assert result.exit_code == 0, result.output
         assert "No pull requests awaiting your review" in result.output
@@ -279,7 +279,7 @@ class TestPrDeepReview:
         with patch("duct.review.prepare_local_review", return_value=Path("/repo/api")) as prep, \
              patch("duct.review.open_in_intellij") as opener:
             result = runner.invoke(
-                cli, ["--workspace-root", str(tmp_path), "pr", "deep-review", "31"]
+                cli, ["--workspace-root", str(tmp_path), "pr", "review", "31"]
             )
 
         assert result.exit_code == 0, result.output
@@ -297,7 +297,7 @@ class TestPrDeepReview:
             side_effect=RuntimeError("no repoPaths configured"),
         ):
             result = runner.invoke(
-                cli, ["--workspace-root", str(tmp_path), "pr", "deep-review", "31"]
+                cli, ["--workspace-root", str(tmp_path), "pr", "review", "31"]
             )
         assert result.exit_code != 0
         assert "no repoPaths configured" in result.output
@@ -307,7 +307,7 @@ class TestPrDeepReview:
 
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["--workspace-root", str(tmp_path), "pr", "deep-review", "999"]
+            cli, ["--workspace-root", str(tmp_path), "pr", "review", "999"]
         )
         assert result.exit_code != 0
         assert "not found" in result.output.lower()

@@ -174,9 +174,32 @@ def _render_pr_table_rows(rows_data: list[dict], single_ticket: bool) -> None:
     table("Pull Requests", columns, rows, data=rows_data)
 
 
-@pr.command("review")
+class _ReviewGroup(click.Group):
+    """`pr review`: ``list`` shows the queue; a PR number deep-reviews that PR."""
+
+    def resolve_command(self, ctx, args):
+        # `duct pr review <#>` → deep-review that PR (keep the number as the arg).
+        if args and args[0].isdigit():
+            return pr_review_deep.name, pr_review_deep, args
+        return super().resolve_command(ctx, args)
+
+
+@pr.group("review", cls=_ReviewGroup, invoke_without_command=True)
 @click.pass_context
 def pr_review(ctx: click.Context) -> None:
+    """List PRs needing review, or deep-review one by number.
+
+    \b
+    duct pr review list   show PRs awaiting your review
+    duct pr review <#>    check out PR #<#> locally and open it in IntelliJ
+    """
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(pr_review_list)
+
+
+@pr_review.command("list")
+@click.pass_context
+def pr_review_list(ctx: click.Context) -> None:
     """List pull requests that need your review.
 
     Includes PRs GitHub has requested from you personally and from teams you
@@ -264,10 +287,10 @@ def pr_open(ctx: click.Context, number: int) -> None:
         output(f"Opened {pr_match.url}")
 
 
-@pr.command("deep-review")
+@click.command("deep-review")
 @click.argument("number", type=int)
 @click.pass_context
-def pr_deep_review(ctx: click.Context, number: int) -> None:
+def pr_review_deep(ctx: click.Context, number: int) -> None:
     """Check out a PR's branch locally and open it in IntelliJ.
 
     Clones the repo if needed, fetches and checks out the PR's head branch,

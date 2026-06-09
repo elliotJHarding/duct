@@ -50,7 +50,7 @@ duct sync ci                       Sync CI status
 duct sync sessions                 Sync Claude Code session data
 duct sync workspace                Sync local git workspace state
 duct ticket list                   List tracked tickets
-duct ticket show <KEY>             Show ticket details and artifacts
+duct ticket status <KEY>           Show ticket details and artifacts
 duct workspace create <KEY>        Create workspace for a ticket
 duct workspace add-repo <KEY> <R>  Add a repo worktree
 duct workspace status              Show workspace health

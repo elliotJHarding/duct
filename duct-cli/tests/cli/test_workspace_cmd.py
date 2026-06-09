@@ -11,8 +11,8 @@ from duct.cli.main import cli
 from duct.cli.workspace_cmd import (
     RepoCandidate,
     _local_default_branch,
-    _org_cache_path,
     _org_cache_dir,
+    _org_cache_path,
     clone_repo,
     discover_repos,
     find_repo,
@@ -389,7 +389,7 @@ def test_list_repos_cli_includes_local_and_remote(tmp_path: Path) -> None:
     ]
     with patch("duct.cli.workspace_cmd.list_org_repos", return_value=remote):
         result = runner.invoke(
-            cli, ["--json", "--workspace-root", str(tmp_path), "list-repos"],
+            cli, ["--json", "--workspace-root", str(tmp_path), "workspace", "list-repos"],
         )
 
     assert result.exit_code == 0, result.output
@@ -415,7 +415,7 @@ def test_list_repos_cli_text_output_columns(tmp_path: Path) -> None:
     remote = [RepoCandidate(name="mocks", slug="acme/mocks", default_branch="develop")]
     with patch("duct.cli.workspace_cmd.list_org_repos", return_value=remote):
         result = runner.invoke(
-            cli, ["--workspace-root", str(tmp_path), "list-repos"],
+            cli, ["--workspace-root", str(tmp_path), "workspace", "list-repos"],
         )
 
     assert result.exit_code == 0, result.output
@@ -457,37 +457,17 @@ def test_list_repos_refresh_flag_bypasses_cache(tmp_path: Path) -> None:
         "duct.cli.workspace_cmd._fetch_org_repos_live", return_value=fresh,
     ) as mock_fetch:
         # Without --refresh, the cache is used and no fetch happens.
-        runner.invoke(cli, ["--workspace-root", str(tmp_path), "list-repos"])
+        runner.invoke(cli, ["--workspace-root", str(tmp_path), "workspace", "list-repos"])
         mock_fetch.assert_not_called()
 
         # With --refresh, a live fetch is forced.
         result = runner.invoke(
-            cli, ["--workspace-root", str(tmp_path), "list-repos", "--refresh"],
+            cli, ["--workspace-root", str(tmp_path), "workspace", "list-repos", "--refresh"],
         )
 
     assert result.exit_code == 0, result.output
     assert "fresh" in result.output
     mock_fetch.assert_called_once_with("acme")
-
-
-def test_list_repos_workspace_alias(tmp_path: Path) -> None:
-    """`duct workspace list-repos` is registered as an alias."""
-    runner = CliRunner()
-    _init_workspace(runner, tmp_path)
-
-    repos_dir = tmp_path / "repos"
-    _create_repo(repos_dir, "only-local")
-    _write_repo_paths_config(tmp_path, repos_dir)
-
-    with patch("duct.cli.workspace_cmd.list_org_repos", return_value=[]):
-        result = runner.invoke(
-            cli,
-            ["--json", "--workspace-root", str(tmp_path), "workspace", "list-repos"],
-        )
-
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output.strip())
-    assert {row["name"] for row in payload} == {"only-local"}
 
 
 def test_list_branches_local_repo(tmp_path: Path) -> None:
@@ -505,7 +485,7 @@ def test_list_branches_local_repo(tmp_path: Path) -> None:
     _write_repo_paths_config(tmp_path, repos_dir)
 
     result = runner.invoke(
-        cli, ["--workspace-root", str(tmp_path), "list-branches", "ice-claims"],
+        cli, ["--workspace-root", str(tmp_path), "workspace", "list-branches", "ice-claims"],
     )
 
     assert result.exit_code == 0, result.output
@@ -537,7 +517,7 @@ def test_list_branches_remote_only_repo(tmp_path: Path) -> None:
     ):
         result = runner.invoke(
             cli,
-            ["--json", "--workspace-root", str(tmp_path), "list-branches", "aa-mocks"],
+            ["--json", "--workspace-root", str(tmp_path), "workspace", "list-branches", "aa-mocks"],
         )
 
     assert result.exit_code == 0, result.output
@@ -555,7 +535,7 @@ def test_list_branches_unknown_repo_errors(tmp_path: Path) -> None:
 
     with patch("duct.cli.workspace_cmd.list_org_repos", return_value=[]):
         result = runner.invoke(
-            cli, ["--workspace-root", str(tmp_path), "list-branches", "ghost"],
+            cli, ["--workspace-root", str(tmp_path), "workspace", "list-branches", "ghost"],
         )
 
     assert result.exit_code != 0
@@ -748,50 +728,12 @@ def test_add_repo_top_level_all_args(tmp_path: Path) -> None:
 
     result = runner.invoke(
         cli,
-        ["--workspace-root", str(tmp_path), "add-repo", "ERSC-100", "my-repo", "main"],
+        ["--workspace-root", str(tmp_path), "workspace", "add-repo", "ERSC-100", "my-repo", "main"],
     )
 
     assert result.exit_code == 0, result.output
     assert "Added worktree" in result.output
     assert (ticket_dir / "my-repo").exists()
-
-
-def test_add_repo_workspace_alias(tmp_path: Path) -> None:
-    """duct workspace add-repo should still work as an alias."""
-    runner = CliRunner()
-    _init_workspace(runner, tmp_path)
-
-    ticket_dir = _create_ticket_dir(tmp_path, "ERSC-200", "alias-test")
-    repo_dir = _create_repo(tmp_path / "repos", "alias-repo")
-
-    subprocess.run(["git", "init"], cwd=repo_dir, capture_output=True)
-    subprocess.run(["git", "checkout", "-b", "develop"], cwd=repo_dir, capture_output=True)
-    (repo_dir / "README.md").write_text("hello")
-    subprocess.run(["git", "add", "."], cwd=repo_dir, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "init"],
-        cwd=repo_dir, capture_output=True,
-        env={"GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t",
-             "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t",
-             "PATH": "/usr/bin:/bin:/usr/local/bin"},
-    )
-
-    import yaml
-    config_path = tmp_path / "config.yaml"
-    cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
-    cfg_data["repoPaths"] = [str(tmp_path / "repos")]
-    config_path.write_text(yaml.dump(cfg_data))
-
-    result = runner.invoke(
-        cli,
-        [
-            "--workspace-root", str(tmp_path),
-            "workspace", "add-repo", "ERSC-200", "alias-repo", "develop",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Added worktree" in result.output
 
 
 def test_add_repo_no_track(tmp_path: Path) -> None:
@@ -822,7 +764,8 @@ def test_add_repo_no_track(tmp_path: Path) -> None:
 
     runner.invoke(
         cli,
-        ["--workspace-root", str(tmp_path), "add-repo", "ERSC-300", "track-repo", "main"],
+        ["--workspace-root", str(tmp_path),
+         "workspace", "add-repo", "ERSC-300", "track-repo", "main"],
     )
 
     worktree_path = ticket_dir / "track-repo"
@@ -852,7 +795,8 @@ def test_add_repo_repo_not_found(tmp_path: Path) -> None:
 
     result = runner.invoke(
         cli,
-        ["--workspace-root", str(tmp_path), "add-repo", "ERSC-400", "typo-repo", "main"],
+        ["--workspace-root", str(tmp_path),
+         "workspace", "add-repo", "ERSC-400", "typo-repo", "main"],
     )
 
     assert result.exit_code != 0
@@ -888,7 +832,8 @@ def test_add_repo_writes_sandbox_settings(tmp_path: Path) -> None:
 
     result = runner.invoke(
         cli,
-        ["--workspace-root", str(tmp_path), "add-repo", "ERSC-600", "sandbox-repo", "main"],
+        ["--workspace-root", str(tmp_path),
+         "workspace", "add-repo", "ERSC-600", "sandbox-repo", "main"],
     )
 
     assert result.exit_code == 0, result.output
@@ -929,7 +874,7 @@ def test_add_repo_branch_override(tmp_path: Path) -> None:
         cli,
         [
             "--workspace-root", str(tmp_path),
-            "add-repo", "ERSC-500", "override-repo", "main",
+            "workspace", "add-repo", "ERSC-500", "override-repo", "main",
             "--branch", "custom-branch-name",
         ],
     )
@@ -1039,7 +984,7 @@ def test_add_repo_clones_missing_repo(tmp_path: Path) -> None:
             cli,
             [
                 "--workspace-root", str(tmp_path),
-                "add-repo", "ERSC-700", "new-repo", "main",
+                "workspace", "add-repo", "ERSC-700", "new-repo", "main",
                 "--clone-from", "my-org/new-repo",
             ],
         )
@@ -1065,7 +1010,7 @@ def test_add_repo_clone_from_is_noop_when_repo_present(tmp_path: Path) -> None:
             cli,
             [
                 "--workspace-root", str(tmp_path),
-                "add-repo", "ERSC-710", "present-repo", "main",
+                "workspace", "add-repo", "ERSC-710", "present-repo", "main",
                 "--clone-from", "my-org/present-repo",
             ],
         )
@@ -1093,7 +1038,7 @@ def test_add_repo_clone_from_errors_without_repopaths(tmp_path: Path) -> None:
             cli,
             [
                 "--workspace-root", str(tmp_path),
-                "add-repo", "ERSC-720", "missing-repo", "main",
+                "workspace", "add-repo", "ERSC-720", "missing-repo", "main",
                 "--clone-from", "my-org/missing-repo",
             ],
         )
@@ -1180,7 +1125,7 @@ def test_add_repo_clone_name_mismatch_errors(tmp_path: Path) -> None:
             cli,
             [
                 "--workspace-root", str(tmp_path),
-                "add-repo", "ERSC-730", "expected-name", "main",
+                "workspace", "add-repo", "ERSC-730", "expected-name", "main",
                 "--clone-from", "my-org/actual-name",
             ],
         )

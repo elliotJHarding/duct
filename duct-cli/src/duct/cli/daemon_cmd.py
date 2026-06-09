@@ -430,3 +430,12 @@ def status(ctx: click.Context) -> None:
         warn("No heartbeat found (daemon has not ticked).")
     else:
         output(f"Last heartbeat: {int(age)}s ago")
+
+
+# ---------------------------------------------------------------------------
+# duct daemon notify — fire a notification through the daemon's mechanism
+# ---------------------------------------------------------------------------
+
+from duct.cli.notify_cmd import notify  # noqa: E402
+
+daemon.add_command(notify, "notify")

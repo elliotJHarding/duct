@@ -400,7 +400,7 @@ duct
     orchestrate --ticket X  Focus orchestration on a specific ticket
 
     ticket list             List tracked tickets
-    ticket show <KEY>       Show ticket details and artifact status
+    ticket status <KEY>     Show ticket details and artifact status
 
     workspace create <KEY>  Create workspace for a ticket
     workspace add-repo      Add a repo worktree to a ticket workspace

@@ -377,10 +377,10 @@ See WORKFLOW.md for development lifecycle guidance.
 
 ## Notifications — staying in the loop
 
-The user is not watching every run. When you do something on their behalf, they should find out without having to read a run summary. You have an actuating surface for this: the `duct notify` command, run via Bash. It fires through the same mechanism the daemon uses — a desktop notification plus a feed entry the TUI shows — so use it rather than writing to the feed yourself.
+The user is not watching every run. When you do something on their behalf, they should find out without having to read a run summary. You have an actuating surface for this: the `duct daemon notify` command, run via Bash. It fires through the same mechanism the daemon uses — a desktop notification plus a feed entry the TUI shows — so use it rather than writing to the feed yourself.
 
 ```
-duct notify --title "<what happened>" --body "<the detail>" --ticket <TICKET-KEY>
+duct daemon notify --title "<what happened>" --body "<the detail>" --ticket <TICKET-KEY>
 ```
 
 `--ticket` is optional and sets the click-to-open Jira link; omit it for workspace-level notices. `--url` overrides the link when the relevant target is not the Jira ticket.
