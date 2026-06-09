@@ -8,6 +8,7 @@ COMMANDS = {
     "activity": "duct.cli.activity_cmd:activity",
     "agent": "duct.cli.agent_cmd:agent",
     "archive": "duct.cli.archive_cmd:archive",
+    "completion": "duct.cli.completion_cmd:completion",
     "config": "duct.cli.config_cmd:config",
     "daemon": "duct.cli.daemon_cmd:daemon",
     "doctor": "duct.cli.doctor_cmd:doctor",
