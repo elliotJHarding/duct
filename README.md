@@ -6,6 +6,15 @@
 
 Developer workflow orchestration CLI. Syncs data from Jira and GitHub into a ticket-centric folder structure and provides an AI orchestrator (Claude Code session) that reviews state and produces artifacts.
 
+## Install
+
+```bash
+brew tap elliotJHarding/duct
+brew install duct
+```
+
+This installs both the `duct` CLI and the `duct-tui` terminal UI.
+
 ## Quick Start
 
 ```bash
