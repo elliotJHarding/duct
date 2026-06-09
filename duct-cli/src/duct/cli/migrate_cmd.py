@@ -134,8 +134,22 @@ def migrate_layout(ctx: click.Context, apply_: bool) -> None:
         success(f"{root} is already on the new layout — nothing to do.")
         return
 
-    # Daemon guard: a live daemon would race the move. KeepAlive=True means a
-    # plain stop is relaunched, so require a full uninstall.
+    ws_moves = planned_workspace_moves(root)
+    home_moves = planned_home_moves()
+
+    # Dry-run writes nothing, so it is always safe — preview before the guard.
+    if not apply_:
+        output(f"Dry run — planned moves for {root} (pass --apply to perform):")
+        for src, dst in ws_moves + home_moves:
+            output(f"  {src}  ->  {dst}")
+        if not (ws_moves or home_moves):
+            output("  (nothing to move)")
+        output("\nApplying requires the daemon to be stopped first: `duct daemon uninstall`.")
+        output("After --apply, reinstall it: `duct daemon install`.")
+        return
+
+    # Daemon guard (apply only): a live daemon would race the move. KeepAlive=True
+    # means a plain stop is relaunched, so require a full uninstall.
     age = daemon_state.heartbeat_age_seconds(root)
     if run_lock.is_locked(root) or (age is not None and age < _DAEMON_FRESH_SECONDS):
         error(
@@ -143,18 +157,6 @@ def migrate_layout(ctx: click.Context, apply_: bool) -> None:
             "  Run `duct daemon uninstall` first, then re-run this migration."
         )
         ctx.exit(1)
-        return
-
-    ws_moves = planned_workspace_moves(root)
-    home_moves = planned_home_moves()
-
-    if not apply_:
-        output(f"Dry run — planned moves for {root} (pass --apply to perform):")
-        for src, dst in ws_moves + home_moves:
-            output(f"  {src}  ->  {dst}")
-        if not (ws_moves or home_moves):
-            output("  (nothing to move)")
-        output("\nAfter --apply, reinstall the daemon: `duct daemon install`.")
         return
 
     migrate_workspace_layout(root, apply=True)
