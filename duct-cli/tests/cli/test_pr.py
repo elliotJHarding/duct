@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 
 TICKET_MD = """\
@@ -123,7 +124,14 @@ def _setup_workspace(root: Path, jira_domain: str | None = "co.atlassian.net") -
     lines = "workspace:\n  root: .\nstatus:\n  focusStatuses:\n    - in progress\n  terminalStatuses:\n    - done\n    - closed\n"
     if jira_domain:
         lines += f"jira:\n  domain: {jira_domain}\n"
-    (root / "config.yaml").write_text(lines)
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
+    paths.config_file(root).write_text(lines)
+
+
+def _write_review_prs(root: Path, body: str) -> None:
+    review_md = paths.review_prs_file(root)
+    review_md.parent.mkdir(parents=True, exist_ok=True)
+    review_md.write_text(body)
 
 
 def _make_ticket(root: Path, key: str, slug: str, ticket_md: str, pr_md: str | None = None) -> Path:
@@ -238,7 +246,7 @@ class TestPrList:
 class TestPrReview:
     def test_lists_review_prs(self, tmp_path: Path) -> None:
         _setup_workspace(tmp_path)
-        (tmp_path / ".review_prs.md").write_text(REVIEW_PRS_MD)
+        _write_review_prs(tmp_path, REVIEW_PRS_MD)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -273,7 +281,7 @@ class TestPrReview:
 class TestPrDeepReview:
     def test_invokes_review_helpers(self, tmp_path: Path) -> None:
         _setup_workspace(tmp_path)
-        (tmp_path / ".review_prs.md").write_text(REVIEW_PRS_MD)
+        _write_review_prs(tmp_path, REVIEW_PRS_MD)
 
         runner = CliRunner()
         with patch("duct.review.prepare_local_review", return_value=Path("/repo/api")) as prep, \
@@ -289,7 +297,7 @@ class TestPrDeepReview:
 
     def test_surfaces_runtime_error(self, tmp_path: Path) -> None:
         _setup_workspace(tmp_path)
-        (tmp_path / ".review_prs.md").write_text(REVIEW_PRS_MD)
+        _write_review_prs(tmp_path, REVIEW_PRS_MD)
 
         runner = CliRunner()
         with patch(
@@ -330,7 +338,7 @@ class TestPrOpen:
     def test_opens_review_queue_pr(self, tmp_path: Path) -> None:
         """A PR only in the review queue (no tracked ticket) is still openable."""
         _setup_workspace(tmp_path)
-        (tmp_path / ".review_prs.md").write_text(REVIEW_PRS_MD)
+        _write_review_prs(tmp_path, REVIEW_PRS_MD)
 
         runner = CliRunner()
         with patch("click.launch") as mock_launch:

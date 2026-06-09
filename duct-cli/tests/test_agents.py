@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from duct.agents import AGENTS_DIRNAME, Agent, list_agents, load_agent
+from duct import paths
+from duct.agents import Agent, list_agents, load_agent
 
 
 def _write_agent(root: Path, filename: str, body: str) -> Path:
-    agents_dir = root / AGENTS_DIRNAME
-    agents_dir.mkdir(exist_ok=True)
+    agents_dir = paths.agents_dir(root)
+    agents_dir.mkdir(parents=True, exist_ok=True)
     path = agents_dir / filename
     path.write_text(dedent(body).lstrip())
     return path

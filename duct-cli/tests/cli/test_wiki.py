@@ -8,15 +8,17 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 
 
 def _init_workspace(root: Path) -> None:
-    (root / "config.yaml").write_text("workspace:\n  root: .\n")
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
+    paths.config_file(root).write_text("workspace:\n  root: .\n")
 
 
 def _write_entry(root: Path, filename: str, body: str) -> None:
-    directory = root / "wiki"
+    directory = paths.wiki_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / filename).write_text(dedent(body).lstrip())
 
@@ -128,7 +130,7 @@ class TestInitSeedsWiki:
         result = CliRunner().invoke(cli, ["--workspace-root", str(tmp_path), "init"])
         assert result.exit_code == 0, result.output
 
-        index = tmp_path / "wiki" / "INDEX.md"
+        index = paths.wiki_index(tmp_path)
         assert index.exists()
         index_text = index.read_text(encoding="utf-8")
         assert "Wiki Index" in index_text

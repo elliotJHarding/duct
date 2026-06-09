@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from duct import paths
 from duct.models import Action, SessionInfo, TicketOverview
 
 # Human-readable labels for action types, shown in the notification title.
@@ -233,7 +234,7 @@ def orchestrator_event(action_count: int) -> NotificationEvent:
 
 
 def feed_path(root: Path) -> Path:
-    return root / ".duct" / "notifications.jsonl"
+    return paths.notifications_feed(root)
 
 
 def append_feed(root: Path, event: NotificationEvent, *, at: str | None = None) -> None:

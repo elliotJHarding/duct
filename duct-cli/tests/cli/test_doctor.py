@@ -7,12 +7,14 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 from duct.config import ConfigError
 
 
 def _init_workspace(root: Path) -> None:
-    (root / "config.yaml").write_text(
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
+    paths.config_file(root).write_text(
         f"workspace:\n  root: .\njira:\n  domain: test.atlassian.net\n  jql: assignee = currentUser()\nrepoPaths:\n  - {root}\n"
     )
 
@@ -49,7 +51,7 @@ def test_doctor_missing_workflow(tmp_path: Path):
 
 def test_doctor_missing_auth(tmp_path: Path):
     _init_workspace(tmp_path)
-    (tmp_path / "WORKFLOW.md").write_text("# Workflow\n")
+    paths.workflow_md(tmp_path).write_text("# Workflow\n")
     runner = CliRunner()
 
     # The keychain is empty (conftest) and gh is absent, so no creds resolve.
@@ -61,7 +63,7 @@ def test_doctor_missing_auth(tmp_path: Path):
 
 def test_doctor_happy_path(tmp_path: Path):
     _init_workspace(tmp_path)
-    (tmp_path / "WORKFLOW.md").write_text("# Workflow\n")
+    paths.workflow_md(tmp_path).write_text("# Workflow\n")
     runner = CliRunner()
 
     mock_response = MagicMock()

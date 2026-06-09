@@ -7,14 +7,16 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
-from duct.actions import WORKSPACE_ACTIONS_FILENAME
+from duct import paths
 from duct.models import Action
 
 from duct_tui.widgets.action_render import _row_label
 
 
 def _write_workspace_action(root: Path, action: dict) -> None:
-    (root / WORKSPACE_ACTIONS_FILENAME).write_text(
+    path = paths.workspace_actions_file(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         yaml.dump({"actions": [action]}, sort_keys=False),
     )
 

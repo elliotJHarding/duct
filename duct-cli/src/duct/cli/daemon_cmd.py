@@ -23,7 +23,7 @@ from pathlib import Path
 
 import click
 
-from duct import api, daemon_state, run_lock, terminal
+from duct import api, daemon_state, paths, run_lock, terminal
 from duct.cli.output import error, output, success, warn
 from duct.cli.resolve import resolve_root
 from duct.config import ConfigError, load_config
@@ -48,7 +48,7 @@ def _domain_target() -> str:
 
 
 def _pidfile() -> Path:
-    return state_dir() / "daemon.pid"
+    return paths.daemon_pidfile()
 
 
 @click.group()
@@ -304,7 +304,7 @@ def _launchd_path() -> str:
 
 def _build_plist(root: Path | None = None) -> dict:
     duct_bin = shutil.which("duct") or sys.argv[0]
-    logs = state_dir()
+    logs = paths.home_logs_dir()
     # Bake the resolved workspace root into the args (and DUCT_ROOT) so the
     # daemon resolves it even though launchd gives it no useful cwd and the
     # state.yaml pointer might be absent. This is what makes install robust.
@@ -341,6 +341,7 @@ def install_agent(root: Path | None = None) -> None:
 
         set_workspace_path(root)
     state_dir().mkdir(parents=True, exist_ok=True)
+    paths.home_logs_dir().mkdir(parents=True, exist_ok=True)
     plist = _plist_path()
     plist.parent.mkdir(parents=True, exist_ok=True)
     with plist.open("wb") as fh:

@@ -5,7 +5,8 @@ from __future__ import annotations
 import click
 import yaml
 
-from duct.cli.output import error, output, success, syntax
+from duct import paths
+from duct.cli.output import error, success, syntax
 from duct.cli.resolve import resolve_root
 from duct.config import (
     ConfigError,
@@ -95,7 +96,7 @@ def config_set(ctx: click.Context, key: str, value: str) -> None:
         return
 
     # Read raw YAML to preserve structure
-    config_path = root / "config.yaml"
+    config_path = paths.config_file(root)
     if config_path.exists():
         raw = yaml.safe_load(config_path.read_text()) or {}
     else:
@@ -152,7 +153,7 @@ def config_add_repo_path(ctx: click.Context, path: str) -> None:
     from pathlib import Path as P
     resolved = str(P(path).expanduser().resolve())
 
-    config_path = root / "config.yaml"
+    config_path = paths.config_file(root)
     if config_path.exists():
         raw = yaml.safe_load(config_path.read_text()) or {}
     else:
@@ -191,7 +192,7 @@ def config_remove_repo_path(ctx: click.Context, path: str) -> None:
     from pathlib import Path as P
     resolved = str(P(path).expanduser().resolve())
 
-    config_path = root / "config.yaml"
+    config_path = paths.config_file(root)
     if config_path.exists():
         raw = yaml.safe_load(config_path.read_text()) or {}
     else:

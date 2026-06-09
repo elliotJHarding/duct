@@ -9,6 +9,7 @@ from pathlib import Path
 
 import httpx
 
+from duct import paths
 from duct.exceptions import AuthError, SyncError
 from duct.markdown import TICKET_KEY_PATTERN, atomic_write, generate_frontmatter
 from duct.models import PRComment, PullRequest, Reviewer, SyncResult
@@ -384,13 +385,15 @@ class GitHubSync:
         return matches & known_keys
 
     def _write_review_prs_md(self, prs: list[PullRequest], root: Path) -> None:
-        """Write orphan review-requested PRs to `.review_prs.md` at root.
+        """Write orphan review-requested PRs to ``.duct/review_prs.md``.
 
         Always written (even when the list is empty) so stale state is cleared
         on every sync.
         """
         content = self._format_prs_md(prs)
-        atomic_write(root / ".review_prs.md", content)
+        target = paths.review_prs_file(root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(target, content)
 
     def _write_pull_requests_md(self, prs: list[PullRequest], ticket_dir: Path) -> None:
         """Write PULL_REQUESTS.md into the orchestrator directory for a ticket."""

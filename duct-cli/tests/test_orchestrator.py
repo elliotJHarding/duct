@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
+from duct import paths
 from duct.orchestrator import list_runs, read_run_body
 
 
 def _write_run(ws: Path, name: str, body: str) -> Path:
-    runs = ws / ".runs"
-    runs.mkdir(exist_ok=True)
+    runs = paths.runs_dir(ws)
+    runs.mkdir(parents=True, exist_ok=True)
     path = runs / f"{name}.md"
     path.write_text(dedent(body).lstrip())
     return path

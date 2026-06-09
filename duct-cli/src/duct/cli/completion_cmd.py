@@ -20,7 +20,7 @@ def _zsh_completion_script() -> str:
         _duct_find_workspace_root() {
             local dir="$PWD"
             while [[ "$dir" != "/" ]]; do
-                if [[ -f "$dir/config.yaml" ]]; then
+                if [[ -f "$dir/toolkit/config.yaml" ]]; then
                     echo "$dir"
                     return 0
                 fi
@@ -50,7 +50,7 @@ def _zsh_completion_script() -> str:
         _duct_complete_repo_name() {
             local root
             root="$(_duct_find_workspace_root)" || return
-            local cache="$root/.cache/completions/repos.txt"
+            local cache="$root/.duct/cache/completions/repos.txt"
             [[ -f "$cache" ]] || return
             local -a repos
             repos=( ${(f)"$(< "$cache")"} )
@@ -296,7 +296,7 @@ def _bash_completion_script() -> str:
         _duct_find_workspace_root() {
             local dir="$PWD"
             while [[ "$dir" != "/" ]]; do
-                if [[ -f "$dir/config.yaml" ]]; then
+                if [[ -f "$dir/toolkit/config.yaml" ]]; then
                     echo "$dir"
                     return 0
                 fi
@@ -317,7 +317,7 @@ def _bash_completion_script() -> str:
         _duct_complete_repo_name() {
             local root
             root="$(_duct_find_workspace_root)" || return
-            local cache="$root/.cache/completions/repos.txt"
+            local cache="$root/.duct/cache/completions/repos.txt"
             [[ -f "$cache" ]] || return
             local cur="${COMP_WORDS[COMP_CWORD]}"
             COMPREPLY=( $(compgen -W "$(cat "$cache")" -- "$cur") )
@@ -489,7 +489,7 @@ def _fish_completion_script() -> str:
         function __duct_find_workspace_root
             set -l dir (pwd)
             while test "$dir" != "/"
-                if test -f "$dir/config.yaml"
+                if test -f "$dir/toolkit/config.yaml"
                     echo "$dir"
                     return 0
                 end
@@ -509,7 +509,7 @@ def _fish_completion_script() -> str:
 
         function __duct_complete_repo_name
             set -l root (__duct_find_workspace_root); or return
-            set -l cache "$root/.cache/completions/repos.txt"
+            set -l cache "$root/.duct/cache/completions/repos.txt"
             test -f "$cache"; or return
             cat "$cache"
         end

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 from duct.credentials import load_credentials
 from duct.global_state import load_state
@@ -96,8 +97,8 @@ def test_setup_full_happy_path(
     # State file points at the workspace.
     state = load_state()
     assert state.workspace_path == workspace.resolve()
-    assert (workspace / "config.yaml").exists()
-    assert (workspace / "WORKFLOW.md").exists()
+    assert paths.config_file(workspace).exists()
+    assert paths.workflow_md(workspace).exists()
 
     # Credentials persisted to the keychain.
     creds = load_credentials()
@@ -107,7 +108,7 @@ def test_setup_full_happy_path(
 
     # config.yaml carries the chosen orgs and Jira domain.
     import yaml
-    data = yaml.safe_load((workspace / "config.yaml").read_text())
+    data = yaml.safe_load(paths.config_file(workspace).read_text())
     assert data["githubOrgs"] == ["acme", "globex"]
     assert data["jira"]["domain"] == "acme.atlassian.net"
 

@@ -90,7 +90,7 @@ def _render_managed(working_notes: list[str], repos: list[str]) -> str:
     lines: list[str] = [
         MANAGED_BLOCK_START,
         "@orchestrator/TICKET.md",
-        "@../wiki/INDEX.md",
+        "@../toolkit/wiki/INDEX.md",
         "",
         "# duct ticket workspace",
         "",
@@ -123,7 +123,7 @@ def _render_managed(working_notes: list[str], repos: list[str]) -> str:
     lines += _code_and_repos_section()
     lines += _wiki_section()
     lines += [
-        "@../WORKFLOW.md",
+        "@../toolkit/WORKFLOW.md",
         MANAGED_BLOCK_END,
     ]
     return "\n".join(lines) + "\n"
@@ -147,7 +147,7 @@ def _code_and_repos_section() -> list[str]:
         "    1. Read `fixVersion(s)` on this ticket in `orchestrator/TICKET.md`",
         "       (fall back to `EPIC.md` if the ticket itself has none).",
         "    2. Translate the fixVersion to a branch name using the team's",
-        "       naming convention — consult `../wiki/` for client-specific",
+        "       naming convention — consult `../toolkit/wiki/` for client-specific",
         "       conventions (commonly `release/X.Y` or similar).",
         "    3. Cross-check `orchestrator/WORKSPACE.md`: sibling repos already",
         "       added to this ticket record the branch they were forked from,",
@@ -175,7 +175,7 @@ def _wiki_section() -> list[str]:
     return [
         "## Wiki",
         "",
-        "This workspace has a curated wiki at `../wiki/` capturing lessons,",
+        "This workspace has a curated wiki at `../toolkit/wiki/` capturing lessons,",
         "conventions, domain knowledge, and environment quirks across sessions.",
         "",
         "**Consult it.** The wiki index is loaded above via `@`-import, so you",
@@ -229,6 +229,6 @@ def _wiki_section() -> list[str]:
         "",
         "The contributor captures eagerly; most invocations write at least one",
         "entry. The `wiki-maintainer` dedupes and prunes periodically. Do not",
-        "edit files in `wiki/` yourself — always go through the subagents.",
+        "edit files in `toolkit/wiki/` yourself — always go through the subagents.",
         "",
     ]

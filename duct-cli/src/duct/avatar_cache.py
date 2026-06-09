@@ -1,6 +1,6 @@
 """On-disk avatar cache with background prefetch.
 
-Stores downloaded avatars at ``~/.cache/duct/avatars/{login}.png`` and hands
+Stores downloaded avatars at ``~/.config/duct/cache/avatars/{login}.png`` and hands
 back a path once present. Network I/O happens in a daemon thread so callers
 never block; until the download lands, callers fall back to their own
 placeholder (an initials badge in the TUI, the brand icon in notifications).
@@ -17,9 +17,11 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
+from duct import paths
+
 
 def _cache_root() -> Path:
-    root = Path.home() / ".cache" / "duct" / "avatars"
+    root = paths.avatars_cache_dir()
     root.mkdir(parents=True, exist_ok=True)
     return root
 

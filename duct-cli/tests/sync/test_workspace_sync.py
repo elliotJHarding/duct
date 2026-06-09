@@ -7,6 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from duct import paths
 from duct.sync.workspace_sync import WorkspaceSync
 
 
@@ -259,7 +260,9 @@ class TestFullSync:
         root.mkdir()
 
         template = {"env": {"CLAUDE_CODE_ENABLE_TELEMETRY": "1"}}
-        (root / "settings.template.json").write_text(json.dumps(template))
+        template_path = paths.settings_template(root)
+        template_path.parent.mkdir(parents=True, exist_ok=True)
+        template_path.write_text(json.dumps(template))
 
         with_repo = _make_ticket_dir(root, "ERSC-500-with-repo")
         _make_git_repo(with_repo / "svc")

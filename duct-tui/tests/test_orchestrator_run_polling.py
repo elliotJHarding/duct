@@ -5,13 +5,14 @@ from __future__ import annotations
 import pytest
 from textual.widgets import TabbedContent
 
+from duct import paths
 from duct_tui.app import DuctApp
 from duct_tui.widgets.orchestrator_tab import AllActionsPanel, OrchestratorTab
 
 
 def _write_run(root, stamp: str) -> None:
-    runs = root / ".runs"
-    runs.mkdir(exist_ok=True)
+    runs = paths.runs_dir(root)
+    runs.mkdir(parents=True, exist_ok=True)
     (runs / f"{stamp}.md").write_text(
         f"---\ntimestamp: {stamp}\nexit_code: 0\n---\n\n"
         "# Orchestrator run\n\n## Conclusion\n> Verified.\n\n## Timeline\n- Read\n",

@@ -35,10 +35,10 @@ class TestFreshWrite:
         assert MANAGED_BLOCK_START in content
         assert MANAGED_BLOCK_END in content
         assert "@orchestrator/TICKET.md" in content
-        assert "@../wiki/INDEX.md" in content
+        assert "@../toolkit/wiki/INDEX.md" in content
         assert "# duct ticket workspace" in content
         assert "Sync-managed context" in content
-        assert "@../WORKFLOW.md" in content
+        assert "@../toolkit/WORKFLOW.md" in content
         assert "preserved across syncs" in content
         assert result.tickets_synced == 1
         assert result.errors == []

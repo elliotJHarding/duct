@@ -16,8 +16,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from duct import paths
 
-CACHE_DIR = Path.home() / ".cache" / "duct" / "mermaid"
+
+def _cache_dir() -> Path:
+    return paths.mermaid_cache_dir()
 
 # Bump when MMDC_ARGS change so old cached PNGs get regenerated.
 _RENDER_VERSION = "v4"
@@ -33,7 +36,7 @@ def cache_path(source: str) -> Path:
     """PNG path for a given mermaid source -- stable across invocations."""
     keyed = f"{_RENDER_VERSION}:{source}".encode("utf-8")
     digest = hashlib.sha256(keyed).hexdigest()
-    return CACHE_DIR / f"{digest}.png"
+    return _cache_dir() / f"{digest}.png"
 
 
 def render_to_png(source: str, *, timeout: float = 30.0) -> Path | None:
@@ -46,7 +49,7 @@ def render_to_png(source: str, *, timeout: float = 30.0) -> Path | None:
     if mmdc is None:
         return None
 
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    _cache_dir().mkdir(parents=True, exist_ok=True)
     try:
         result = subprocess.run(
             [mmdc, "-i", "-", "-o", str(target), *_MMDC_ARGS],

@@ -11,6 +11,7 @@ from typing import Protocol, runtime_checkable
 
 import yaml
 
+from duct import paths
 from duct.models import SyncResult
 
 
@@ -69,7 +70,7 @@ class SyncCoordinator:
     def __init__(self, root: Path, intervals: dict[str, int] | None = None):
         self._root = root
         self._intervals = intervals or {}
-        self._state_path = root / ".sync_state.yaml"
+        self._state_path = paths.sync_state_file(root)
 
     def _load_state(self) -> dict[str, float]:
         if self._state_path.exists():

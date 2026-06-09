@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from duct import paths
 from duct.exceptions import AuthError, ConfigError
 
 _DEFAULT_JQL = "assignee = currentUser() AND status != Done ORDER BY updated DESC"
-_CONFIG_FILENAME = "config.yaml"
 
 
 @dataclass(frozen=True)
@@ -485,8 +484,8 @@ def _sync_intervals_to_dict(intervals: SyncIntervals) -> dict[str, int]:
 
 
 def load_config(root: Path) -> WorkspaceConfig:
-    """Load configuration from *root*/config.yaml, falling back to defaults."""
-    config_path = root / _CONFIG_FILENAME
+    """Load configuration from *root*/toolkit/config.yaml, falling back to defaults."""
+    config_path = paths.config_file(root)
     if not config_path.exists():
         return WorkspaceConfig(root=root)
 
@@ -543,10 +542,10 @@ def load_config(root: Path) -> WorkspaceConfig:
 
 
 def save_config(config: WorkspaceConfig, root: Path) -> None:
-    """Write *config* as config.yaml inside *root*."""
+    """Write *config* as toolkit/config.yaml inside *root*."""
     import yaml
 
-    root.mkdir(parents=True, exist_ok=True)
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {
         "workspace": {
             "root": str(config.root),
@@ -568,25 +567,22 @@ def save_config(config: WorkspaceConfig, root: Path) -> None:
         "activity": _activity_to_dict(config.activity),
         "autoOrchestrate": _auto_orchestrate_to_dict(config.auto_orchestrate),
     }
-    config_path = root / _CONFIG_FILENAME
+    config_path = paths.config_file(root)
     config_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
 
 def find_workspace_root(start: Path | None = None) -> Path:
-    """Walk up from *start* (default: cwd) looking for config.yaml.
+    """Walk up from *start* (default: cwd) looking for the workspace sentinel.
 
-    Returns the directory containing config.yaml, or raises ConfigError.
+    Returns the directory holding ``toolkit/config.yaml``, or raises ConfigError.
     """
-    current = (start or Path.cwd()).resolve()
-    while True:
-        if (current / _CONFIG_FILENAME).exists():
-            return current
-        parent = current.parent
-        if parent == current:
-            raise ConfigError(
-                f"No {_CONFIG_FILENAME} found in {start or Path.cwd()} or any parent directory"
-            )
-        current = parent
+    root = paths.find_workspace_root(start)
+    if root is None:
+        raise ConfigError(
+            f"No {paths.TOOLKIT_DIRNAME}/{paths.CONFIG_FILENAME} found in "
+            f"{start or Path.cwd()} or any parent directory"
+        )
+    return root
 
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,7 @@ class _SessionState(enum.Enum):
 
 
 def _resolve_workspace_root(cli_root: str | None = None) -> Path:
-    """Find the workspace root from CLI arg, env var, or config.yaml walk."""
+    """Find the workspace root from CLI arg, env var, or toolkit/config.yaml walk."""
     if cli_root:
         return Path(cli_root).resolve()
     env_root = os.environ.get("DUCT_ROOT")
@@ -843,7 +843,7 @@ def main():
         sys.stderr.write(
             "duct-tui must be started from inside a duct workspace.\n"
             "Resolution options:\n"
-            "  - cd into a duct workspace (a directory containing config.yaml) and re-run\n"
+            "  - cd into a duct workspace (a directory containing toolkit/config.yaml) and re-run\n"
             "  - pass the workspace path as an argument: duct-tui /path/to/workspace\n"
             "  - set the DUCT_ROOT environment variable to the workspace path\n"
             "  - create a new workspace with: duct init\n"

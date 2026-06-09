@@ -10,13 +10,19 @@ from pathlib import Path
 
 import httpx
 
+from duct import paths
 from duct.config import SandboxConfig
 from duct.exceptions import AuthError, SyncError
 from duct.markdown import atomic_write, generate_frontmatter
 from duct.models import Comment, SyncResult, Ticket
 from duct.sandbox import write_settings
 from duct.sync.adf import adf_to_markdown
-from duct.workspace import archive_ticket, ensure_epic_link, ensure_ticket_dir, enumerate_ticket_dirs
+from duct.workspace import (
+    archive_ticket,
+    ensure_epic_link,
+    ensure_ticket_dir,
+    enumerate_ticket_dirs,
+)
 
 _SEARCH_FIELDS = (
     "summary,status,priority,issuetype,assignee,project,parent,"
@@ -44,7 +50,6 @@ _STATUS_CATEGORIES: dict[str, str] = {
 
 _DEFAULT_CATEGORY = "Pre-Development"
 
-_IDENTITY_CACHE_PATH = (".cache", "jira_identity.json")
 
 
 def _status_category(status: str) -> str:
@@ -53,7 +58,7 @@ def _status_category(status: str) -> str:
 
 
 def _identity_cache_path(root: Path) -> Path:
-    return root.joinpath(*_IDENTITY_CACHE_PATH)
+    return paths.jira_identity_cache(root)
 
 
 def _write_identity_cache(root: Path, account_id: str) -> None:

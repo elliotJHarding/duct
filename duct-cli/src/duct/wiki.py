@@ -1,10 +1,10 @@
 """Workspace wiki — durable knowledge curated by the wiki subagents.
 
-The wiki lives at ``{workspace_root}/wiki/`` and contains flat markdown
+The wiki lives at ``{workspace_root}/toolkit/wiki/`` and contains flat markdown
 entries plus an ``INDEX.md`` table of contents. Sessions consult the wiki
 via the ``wiki-reader`` subagent and contribute through the
-``wiki-contributor`` subagent — both are Claude Code subagents shipped with
-duct in ``.claude/agents/``. This module provides the read-side helpers
+``wiki-contributor`` subagent — both are Claude Code subagents materialised at
+``{workspace_root}/.claude/agents/``. This module provides the read-side helpers
 used by the ``duct wiki`` CLI and a launcher for the ``wiki-maintainer``.
 """
 
@@ -16,10 +16,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from duct import paths
 from duct.markdown import parse_frontmatter
 
-WIKI_DIRNAME = "wiki"
-INDEX_FILENAME = "INDEX.md"
+INDEX_FILENAME = paths.WIKI_INDEX_FILENAME
 ENTRY_TYPES = ("lesson", "convention", "domain", "env")
 
 
@@ -33,11 +33,11 @@ class WikiEntry:
 
 
 def wiki_dir(root: Path) -> Path:
-    return root / WIKI_DIRNAME
+    return paths.wiki_dir(root)
 
 
 def index_path(root: Path) -> Path:
-    return wiki_dir(root) / INDEX_FILENAME
+    return paths.wiki_index(root)
 
 
 def _warn(message: str) -> None:
@@ -119,7 +119,7 @@ def spawn_maintainer(root: Path) -> int:
 
     prompt = (
         "Invoke the `wiki-maintainer` subagent via the Task tool to dedupe, "
-        "prune, and consolidate the workspace wiki at ./wiki/. Surface its "
+        "prune, and consolidate the workspace wiki at ./toolkit/wiki/. Surface its "
         "summary at the end."
     )
     cmd = [claude, "-p", prompt]

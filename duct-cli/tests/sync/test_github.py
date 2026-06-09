@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from duct import paths
 from duct.exceptions import AuthError, SyncError
 from duct.models import PRComment, PullRequest, Reviewer
 from duct.sync.github import _GRAPHQL_URL, GitHubSync
@@ -793,7 +794,7 @@ class TestFullSync:
         result = gh.sync(tmp_workspace)
         assert result.errors == []
 
-        review_md = tmp_workspace / ".review_prs.md"
+        review_md = paths.review_prs_file(tmp_workspace)
         assert review_md.exists()
         content = review_md.read_text()
         assert "## #31" in content
@@ -809,7 +810,7 @@ class TestFullSync:
         httpx_mock.add_response(url=_GRAPHQL_URL, json=_page(node), is_reusable=True)
 
         gh.sync(tmp_workspace)
-        content = (tmp_workspace / ".review_prs.md").read_text()
+        content = paths.review_prs_file(tmp_workspace).read_text()
         assert "## #50" not in content
 
     def test_sync_no_ticket_dirs(self, gh: GitHubSync, tmp_workspace: Path):

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 from duct.cli.workspace_cmd import (
     RepoCandidate,
@@ -64,7 +65,8 @@ def _init_git_repo(path: Path, branch: str = "main") -> None:
 def _write_repo_paths_config(tmp_path: Path, repos_dir: Path) -> None:
     """Point the workspace config's repoPaths at ``repos_dir``."""
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["repoPaths"] = [str(repos_dir)]
     config_path.write_text(yaml.dump(cfg_data))
@@ -362,9 +364,9 @@ def test_list_org_repos_no_cache_dir_calls_live_every_time(tmp_path: Path) -> No
 
 
 def test_org_cache_path_namespaces_per_workspace(tmp_path: Path) -> None:
-    """Cache files land under <workspace>/.cache/gh-org-repos/<org>.json."""
+    """Cache files land under <workspace>/.duct/cache/gh-org-repos/<org>.json."""
     p = _org_cache_path(tmp_path, "ice-tech-group")
-    assert p == tmp_path / ".cache" / "gh-org-repos" / "ice-tech-group.json"
+    assert p == paths.gh_org_cache_dir(tmp_path) / "ice-tech-group.json"
     # _org_cache_dir is the parent directory.
     assert _org_cache_dir(tmp_path) == p.parent
 
@@ -434,7 +436,7 @@ def test_list_repos_refresh_flag_bypasses_cache(tmp_path: Path) -> None:
 
     # Point cfg.root at tmp_path so cache files land here.
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["workspace"] = {"root": str(tmp_path)}
     cfg_data["githubOrgs"] = ["acme"]
@@ -500,7 +502,7 @@ def test_list_branches_remote_only_repo(tmp_path: Path) -> None:
 
     # Configure a GitHub org so the remote lookup runs.
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["githubOrgs"] = ["acme"]
     cfg_data["repoPaths"] = [str(tmp_path / "empty")]
@@ -721,7 +723,7 @@ def test_add_repo_top_level_all_args(tmp_path: Path) -> None:
 
     # Write config with repo_paths pointing to our repos dir
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["repoPaths"] = [str(tmp_path / "repos")]
     config_path.write_text(yaml.dump(cfg_data))
@@ -757,7 +759,7 @@ def test_add_repo_no_track(tmp_path: Path) -> None:
     )
 
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["repoPaths"] = [str(tmp_path / "repos")]
     config_path.write_text(yaml.dump(cfg_data))
@@ -788,7 +790,7 @@ def test_add_repo_repo_not_found(tmp_path: Path) -> None:
     _create_repo(tmp_path / "repos", "real-repo")
 
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["repoPaths"] = [str(tmp_path / "repos")]
     config_path.write_text(yaml.dump(cfg_data))
@@ -825,7 +827,7 @@ def test_add_repo_writes_sandbox_settings(tmp_path: Path) -> None:
     )
 
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["repoPaths"] = [str(tmp_path / "repos")]
     config_path.write_text(yaml.dump(cfg_data))
@@ -865,7 +867,7 @@ def test_add_repo_branch_override(tmp_path: Path) -> None:
     )
 
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["repoPaths"] = [str(tmp_path / "repos")]
     config_path.write_text(yaml.dump(cfg_data))
@@ -1028,7 +1030,7 @@ def test_add_repo_clone_from_errors_without_repopaths(tmp_path: Path) -> None:
 
     # Overwrite config with an empty repoPaths list.
     import yaml
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     cfg_data = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
     cfg_data["repoPaths"] = []
     config_path.write_text(yaml.dump(cfg_data))

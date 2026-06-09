@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from duct import paths
 from duct.config import load_config
 from duct.prompts import load_prompt
 
 ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Agent"]
-RUNS_DIRNAME = ".runs"
 
 
 def build_prompt(ticket_key: str | None = None, fork_model: str = "sonnet") -> str:
@@ -294,7 +294,7 @@ class RunRecorder:
         self.root = root
         self.ticket_key = ticket_key
         self.timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-        self.runs_dir = root / RUNS_DIRNAME
+        self.runs_dir = paths.runs_dir(root)
         self.path = self.runs_dir / f"{self.timestamp}.md"
         self.events: list[dict] = []
 
@@ -378,7 +378,7 @@ def list_runs(
     those without a ``ticket:`` field in their frontmatter. Pass a
     string to filter to runs scoped to that ticket.
     """
-    runs_dir = root / RUNS_DIRNAME
+    runs_dir = paths.runs_dir(root)
     if not runs_dir.is_dir():
         return []
 

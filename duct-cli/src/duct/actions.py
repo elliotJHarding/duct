@@ -1,8 +1,8 @@
 """Action management for duct orchestration.
 
 Actions can be ticket-scoped (`{ticket}/orchestrator/actions.yaml`) or
-workspace-scoped (`.actions.yaml` at the workspace root, for cross-cutting
-work like workflow self-improvement). Both files use the same schema.
+workspace-scoped (`.duct/actions.yaml`, for cross-cutting work like workflow
+self-improvement). Both files use the same schema.
 """
 
 from __future__ import annotations
@@ -12,10 +12,9 @@ from pathlib import Path
 
 import yaml
 
+from duct import paths
 from duct.models import Action
 from duct.workspace import enumerate_ticket_dirs, resolve_ticket_dir
-
-WORKSPACE_ACTIONS_FILENAME = ".actions.yaml"
 
 
 def _items_from_raw(raw: object) -> list[dict]:
@@ -94,7 +93,7 @@ def get_actions(root: Path, key: str, ticket_dir: Path | None = None) -> list[Ac
 
 def get_workspace_actions(root: Path) -> list[Action]:
     """Pending and recent workspace-level actions (not tied to a ticket)."""
-    return _load_actions_file(root / WORKSPACE_ACTIONS_FILENAME)
+    return _load_actions_file(paths.workspace_actions_file(root))
 
 
 def get_all_actions(root: Path) -> list[tuple[str, Action]]:
@@ -131,7 +130,7 @@ def resolve_action(
     on rejections so the orchestrator can see why on its next run.
     """
     if not key:
-        _resolve_in_file(root / WORKSPACE_ACTIONS_FILENAME, action_id, approved, feedback)
+        _resolve_in_file(paths.workspace_actions_file(root), action_id, approved, feedback)
         return
 
     ticket_dir = resolve_ticket_dir(root, key)

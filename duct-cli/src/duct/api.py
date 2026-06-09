@@ -8,7 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from duct import perf
+from duct import pane_status, paths, perf
+from duct.actions import get_actions, get_all_actions, resolve_action
 from duct.config import (
     WorkspaceConfig,
     find_workspace_root,
@@ -19,7 +20,7 @@ from duct.config import (
     load_config,
     save_config,
 )
-from duct.exceptions import AuthError, ConfigError, SyncError, DuctError, WorkspaceError
+from duct.exceptions import AuthError, ConfigError, DuctError, SyncError, WorkspaceError
 from duct.models import (
     Action,
     Comment,
@@ -39,29 +40,34 @@ from duct.models import (
     TicketOverview,
     TicketSummary,
 )
+from duct.orchestrator import launch as launch_orchestrator
+from duct.pr import load_ticket_prs
 from duct.session import (
     apply_recency_decoration,
     discover_sessions,
-    is_pid_alive,
-    launch_session as _launch_session,
-    launch_session_in_dir as _launch_session_in_dir,
     match_session_ticket,
+)
+from duct.session import (
+    launch_session as _launch_session,
+)
+from duct.session import (
+    launch_session_in_dir as _launch_session_in_dir,
+)
+from duct.session import (
     prepare_session as _prepare_session,
+)
+from duct.session import (
     stop_session as _stop_session,
 )
-from duct.terminal import TerminalAdapter, focus_terminal_tab, get_terminal_adapter, get_tty
-from duct.actions import get_actions, get_all_actions, resolve_action
 from duct.tasks import (
-    get_tasks,
     add_task,
-    toggle_task,
     delete_task,
-    reorder_task,
     edit_task,
+    get_tasks,
+    reorder_task,
+    toggle_task,
 )
-from duct.orchestrator import launch as launch_orchestrator
-from duct import pane_status
-from duct.pr import load_ticket_prs
+from duct.terminal import TerminalAdapter, focus_terminal_tab, get_terminal_adapter, get_tty
 from duct.workspace import (
     archive_ticket,
     branch_name,
@@ -170,7 +176,7 @@ def _status_group_rank(status: str, cfg: WorkspaceConfig) -> int:
 
 def get_tickets(root: Path) -> list[TicketSummary]:
     """All tracked tickets, ordered by status group then activity."""
-    from duct.markdown import parse_frontmatter, extract_table
+    from duct.markdown import extract_table, parse_frontmatter
 
     cfg = load_config(root)
     ticket_dirs = enumerate_ticket_dirs(root)
@@ -387,11 +393,11 @@ def get_ticket_overviews(
     `apply_overrides`. Used by `load_initial` to avoid doubling the
     session-discovery cost on TUI startup.
     """
-    from duct.workspace import enumerate_ticket_dirs
-    from duct.markdown import parse_frontmatter, extract_table
-    from duct.session import discover_sessions, match_session_ticket
     from duct.actions import get_actions as _get_actions
+    from duct.markdown import extract_table, parse_frontmatter
+    from duct.session import discover_sessions, match_session_ticket
     from duct.sync.jira import read_identity_cache
+    from duct.workspace import enumerate_ticket_dirs
 
     cfg = load_config(root)
     ticket_dirs = enumerate_ticket_dirs(root)
@@ -568,7 +574,7 @@ def get_ticket_overviews(
 
 def get_ticket_detail(root: Path, key: str) -> TicketDetail | None:
     """Full detail for a single ticket."""
-    from duct.markdown import parse_frontmatter, extract_table
+    from duct.markdown import extract_table, parse_frontmatter
 
     ticket_dir = resolve_ticket_dir(root, key)
     if not ticket_dir:
@@ -741,8 +747,8 @@ def get_all_prs(
                 seen.add(dedup_key)
                 results.append((key, pr))
 
-    # Orphan review PRs (workspace-root .review_prs.md)
-    review_md = root / ".review_prs.md"
+    # Orphan review PRs (.duct/review_prs.md)
+    review_md = paths.review_prs_file(root)
     if review_md.exists():
         try:
             for pr in parse_pull_requests_md(review_md.read_text(encoding="utf-8")):
@@ -764,13 +770,13 @@ def get_all_prs(
 def get_review_prs(root: Path) -> list[PullRequest]:
     """Open PRs that need the current user's review (personally or via a team).
 
-    Reads the complete review set written by the GitHub sync to `.review_prs.md`
-    at the workspace root. This is the authoritative "needs my review" list and
+    Reads the complete review set written by the GitHub sync to
+    ``.duct/review_prs.md``. This is the authoritative "needs my review" list and
     is independent of which tickets are tracked. Sorted by `updated_at` desc.
     """
     from duct.pr import parse_pull_requests_md
 
-    review_md = root / ".review_prs.md"
+    review_md = paths.review_prs_file(root)
     if not review_md.exists():
         return []
     try:

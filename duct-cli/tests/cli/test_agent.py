@@ -8,16 +8,18 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 
 
 def _init_workspace(root: Path) -> None:
-    (root / "config.yaml").write_text("workspace:\n  root: .\n")
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
+    paths.config_file(root).write_text("workspace:\n  root: .\n")
 
 
 def _write_agent(root: Path, filename: str, body: str) -> None:
-    agents_dir = root / "agents"
-    agents_dir.mkdir(exist_ok=True)
+    agents_dir = paths.agents_dir(root)
+    agents_dir.mkdir(parents=True, exist_ok=True)
     (agents_dir / filename).write_text(dedent(body).lstrip())
 
 

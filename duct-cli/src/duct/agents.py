@@ -1,4 +1,4 @@
-"""Workflow agents — reusable session prompts stored under ``agents/``.
+"""Workflow agents — reusable session prompts stored under ``toolkit/agents/``.
 
 An agent is a markdown file with YAML frontmatter (``name`` required,
 ``description`` optional) whose body is passed verbatim as the session
@@ -12,9 +12,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from duct import paths
 from duct.markdown import parse_frontmatter
-
-AGENTS_DIRNAME = "agents"
 
 
 @dataclass(frozen=True)
@@ -56,12 +55,12 @@ def _parse_agent_file(path: Path) -> Agent | None:
 
 
 def list_agents(root: Path) -> list[Agent]:
-    """Discover all agents under ``{root}/agents/*.md``.
+    """Discover all agents under ``{root}/toolkit/agents/*.md``.
 
     Malformed files are skipped with a warning; well-formed files are
     returned sorted by name.
     """
-    agents_dir = root / AGENTS_DIRNAME
+    agents_dir = paths.agents_dir(root)
     if not agents_dir.is_dir():
         return []
 

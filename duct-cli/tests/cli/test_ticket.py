@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 
 TICKET_MD = """\
@@ -41,7 +42,8 @@ def _init_workspace(root: Path, jira_domain: str | None = "mycompany.atlassian.n
     lines = "workspace:\n  root: .\n"
     if jira_domain:
         lines += f"jira:\n  domain: {jira_domain}\n"
-    (root / "config.yaml").write_text(lines)
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
+    paths.config_file(root).write_text(lines)
 
 
 class TestTicketList:

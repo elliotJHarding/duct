@@ -8,11 +8,13 @@ from pathlib import Path
 import yaml
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 
 
 def _init_workspace(root: Path) -> None:
-    (root / "config.yaml").write_text(
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
+    paths.config_file(root).write_text(
         "workspace:\n  root: .\njira:\n  domain: test.atlassian.net\n  jql: assignee = currentUser()\nrepoPaths: []\n"
     )
 
@@ -67,7 +69,7 @@ def test_config_set_jira_domain(tmp_path: Path):
     )
 
     assert result.exit_code == 0, result.output
-    raw = yaml.safe_load((tmp_path / "config.yaml").read_text())
+    raw = yaml.safe_load(paths.config_file(tmp_path).read_text())
     assert raw["jira"]["domain"] == "new.atlassian.net"
 
 
@@ -123,7 +125,7 @@ def test_config_add_remove_repo_path_roundtrip(tmp_path: Path):
         cli, ["--workspace-root", str(tmp_path), "config", "add-repo-path", test_path]
     )
     assert result.exit_code == 0, result.output
-    raw = yaml.safe_load((tmp_path / "config.yaml").read_text())
+    raw = yaml.safe_load(paths.config_file(tmp_path).read_text())
     assert test_path in raw["repoPaths"]
 
     # Remove
@@ -131,7 +133,7 @@ def test_config_add_remove_repo_path_roundtrip(tmp_path: Path):
         cli, ["--workspace-root", str(tmp_path), "config", "remove-repo-path", test_path]
     )
     assert result.exit_code == 0, result.output
-    raw = yaml.safe_load((tmp_path / "config.yaml").read_text())
+    raw = yaml.safe_load(paths.config_file(tmp_path).read_text())
     assert test_path not in raw.get("repoPaths", [])
 
 

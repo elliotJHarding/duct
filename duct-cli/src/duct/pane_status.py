@@ -24,8 +24,9 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import TYPE_CHECKING
+
+from duct import paths
 
 if TYPE_CHECKING:
     from duct.terminal import TerminalAdapter
@@ -83,7 +84,6 @@ _OVERRIDE_MATRIX: dict[tuple[str, str], str] = {
 # waiting — i.e. the exact condition that flaps the UI between states.
 # Enable with: DUCT_PANE_STATUS_TRACE=1
 _TRACE_ENV = "DUCT_PANE_STATUS_TRACE"
-_TRACE_PATH = Path.home() / ".duct" / "pane-status-misses.log"
 
 # Pane-text cache: pid -> (captured_at_monotonic, text). Populated as a
 # side effect of `apply_overrides` so the preview UI can paint instantly
@@ -126,9 +126,10 @@ def get_any_cached_pane_text(pid: int) -> str | None:
 
 
 def _trace_miss(pid: int, transcript_status: str, activity: str | None, text: str) -> None:
+    trace_path = paths.pane_status_trace()
     try:
-        _TRACE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with _TRACE_PATH.open("a", encoding="utf-8") as f:
+        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        with trace_path.open("a", encoding="utf-8") as f:
             ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
             f.write(f"=== {ts} pid={pid} transcript={transcript_status} activity={activity!r} ===\n")
             f.write(_tail(text))

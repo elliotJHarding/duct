@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from duct import paths
 from duct.config import SandboxConfig
-
-_SETTINGS_TEMPLATE_FILENAME = "settings.template.json"
 
 
 def build_settings(config: SandboxConfig) -> dict:
@@ -57,13 +56,13 @@ def write_settings(target_dir: Path, config: SandboxConfig) -> Path:
 def load_settings_template(root: Path) -> dict | None:
     """Load ``settings.template.json`` from *root*, or return None if missing/invalid.
 
-    The template is an optional top-level JSON object sitting next to
-    ``config.yaml``.  Its top-level keys are merged into each ticket's
+    The template is an optional top-level JSON object living in ``toolkit/``
+    next to ``config.yaml``.  Its top-level keys are merged into each ticket's
     ``.claude/settings.json`` during sync so that, e.g., telemetry env vars
     only apply to work sessions.  Returns None when the file is absent,
     unreadable, malformed, or not a JSON object.
     """
-    template_path = root / _SETTINGS_TEMPLATE_FILENAME
+    template_path = paths.settings_template(root)
     if not template_path.exists():
         return None
     try:

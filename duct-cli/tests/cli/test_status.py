@@ -8,6 +8,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 from duct.cli.status_cmd import (
     _check_dirty_repos,
@@ -19,7 +20,8 @@ from duct.cli.status_cmd import (
 
 
 def _init_workspace(root: Path) -> None:
-    (root / "config.yaml").write_text("workspace:\n  root: .\n")
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
+    paths.config_file(root).write_text("workspace:\n  root: .\n")
 
 
 def _make_ticket(root: Path, key: str, status: str = "In Progress") -> Path:
@@ -200,7 +202,7 @@ def test_status_uses_configured_focus_statuses(tmp_path: Path):
         "workspace": {"root": str(tmp_path)},
         "status": {"focusStatuses": ["To Do"]},
     }
-    (tmp_path / "config.yaml").write_text(yaml.dump(config_data))
+    paths.config_file(tmp_path).write_text(yaml.dump(config_data))
 
     _make_ticket(tmp_path, "PROJ-1", status="To Do")
     _make_ticket(tmp_path, "PROJ-2", status="In Progress")

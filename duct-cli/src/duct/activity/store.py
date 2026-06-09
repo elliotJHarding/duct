@@ -1,6 +1,6 @@
 """JSONL store for activity events.
 
-One file per UTC date at ``{workspace}/.activity/YYYY-MM-DD.jsonl``.
+One file per UTC date at ``{workspace}/.duct/activity/YYYY-MM-DD.jsonl``.
 Append-only with event_id-based dedup. Crash-safe via atomic rewrite on
 append (read existing → union with new → atomic_write).
 """
@@ -16,17 +16,17 @@ from typing import Iterable
 
 import yaml
 
+from duct import paths
 from duct.markdown import atomic_write
 from duct.models import ActivityEvent
 
-_DIR_NAME = ".activity"
 _STATE_FILENAME = ".state.yaml"
 
 _EVENT_FIELDS = {f.name for f in fields(ActivityEvent)}
 
 
 def activity_dir(root: Path) -> Path:
-    return root / _DIR_NAME
+    return paths.activity_dir(root)
 
 
 def _day_path(root: Path, day: date) -> Path:

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from duct import paths
 from duct.config import SandboxConfig
 from duct.sandbox import (
     build_settings,
@@ -80,17 +81,23 @@ class TestLoadSettingsTemplate:
 
     def test_returns_parsed_dict(self, tmp_path: Path):
         template = {"env": {"CLAUDE_CODE_ENABLE_TELEMETRY": "1"}}
-        (tmp_path / "settings.template.json").write_text(json.dumps(template))
+        template_path = paths.settings_template(tmp_path)
+        template_path.parent.mkdir(parents=True, exist_ok=True)
+        template_path.write_text(json.dumps(template))
 
         assert load_settings_template(tmp_path) == template
 
     def test_returns_none_when_malformed(self, tmp_path: Path):
-        (tmp_path / "settings.template.json").write_text("{not valid json")
+        template_path = paths.settings_template(tmp_path)
+        template_path.parent.mkdir(parents=True, exist_ok=True)
+        template_path.write_text("{not valid json")
 
         assert load_settings_template(tmp_path) is None
 
     def test_returns_none_when_not_object(self, tmp_path: Path):
-        (tmp_path / "settings.template.json").write_text("[1, 2, 3]")
+        template_path = paths.settings_template(tmp_path)
+        template_path.parent.mkdir(parents=True, exist_ok=True)
+        template_path.write_text("[1, 2, 3]")
 
         assert load_settings_template(tmp_path) is None
 

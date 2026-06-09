@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 from duct.orchestrator import (
-    RUNS_DIRNAME,
     RunRecorder,
     build_prompt,
     format_stream_event,
@@ -263,7 +263,7 @@ class TestRunRecorder:
             recorder.record(line)
         path = recorder.finalize(returncode=0)
 
-        assert path.parent == tmp_path / RUNS_DIRNAME
+        assert path.parent == paths.runs_dir(tmp_path)
         assert path.exists()
         assert path.suffix == ".md"
 

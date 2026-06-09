@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from duct import paths
 from duct.config import (
     AutoOrchestrateConfig,
     OrchestratorConfig,
@@ -24,6 +25,14 @@ from duct.config import (
     save_config,
 )
 from duct.exceptions import AuthError, ConfigError
+
+def _write_config(root: Path, text: str) -> Path:
+    """Write workspace config at its on-disk location (root/toolkit/config.yaml)."""
+    config_path = paths.config_file(root)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(text)
+    return config_path
+
 
 # ---------------------------------------------------------------------------
 # load_config
@@ -46,7 +55,7 @@ def test_load_config_with_valid_yaml(tmp_workspace: Path) -> None:
             "ci": 300,
         },
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     cfg = load_config(tmp_workspace)
 
@@ -77,7 +86,7 @@ def test_load_config_ignores_legacy_trust_section(tmp_workspace: Path) -> None:
             "gitCommit": "deny",
         },
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     cfg = load_config(tmp_workspace)
 
@@ -114,12 +123,12 @@ def test_save_config_omits_trust(tmp_workspace: Path) -> None:
     cfg = WorkspaceConfig(root=tmp_workspace)
     save_config(cfg, tmp_workspace)
 
-    raw = yaml.safe_load((tmp_workspace / "config.yaml").read_text())
+    raw = yaml.safe_load(paths.config_file(tmp_workspace).read_text())
     assert "trust" not in raw
 
 
 def test_notifications_defaults_when_absent(tmp_workspace: Path) -> None:
-    (tmp_workspace / "config.yaml").write_text("workspace:\n  root: " + str(tmp_workspace) + "\n")
+    _write_config(tmp_workspace, "workspace:\n  root: " + str(tmp_workspace) + "\n")
     cfg = load_config(tmp_workspace)
 
     assert cfg.notifications.enabled is False
@@ -165,7 +174,7 @@ def test_load_config_with_status_section(tmp_workspace: Path) -> None:
             "terminalStatuses": ["Resolved"],
         },
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     cfg = load_config(tmp_workspace)
 
@@ -206,7 +215,7 @@ def test_load_config_with_session_status_section(tmp_workspace: Path) -> None:
             "staleAfterSeconds": 7200,
         },
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     cfg = load_config(tmp_workspace)
 
@@ -241,7 +250,7 @@ def test_load_config_with_non_integer_session_status_raises(tmp_workspace: Path)
         "workspace": {"root": str(tmp_workspace)},
         "sessionStatus": {"doneWindowSeconds": "soon"},
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     with pytest.raises(ConfigError, match="doneWindowSeconds"):
         load_config(tmp_workspace)
@@ -259,7 +268,7 @@ def test_load_config_with_session_extra_args(tmp_workspace: Path) -> None:
             "extraArgs": ["--model", "sonnet", "--verbose"],
         },
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     cfg = load_config(tmp_workspace)
 
@@ -293,7 +302,7 @@ def test_load_config_with_orchestrator_fork_model(tmp_workspace: Path) -> None:
         "workspace": {"root": str(tmp_workspace)},
         "orchestrator": {"forkModel": "haiku"},
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     cfg = load_config(tmp_workspace)
 
@@ -340,7 +349,7 @@ def test_load_config_with_auto_orchestrate_weekday_strings(tmp_workspace: Path) 
             "syncFirst": True,
         },
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     cfg = load_config(tmp_workspace)
 
@@ -356,7 +365,7 @@ def test_load_config_with_auto_orchestrate_int_weekdays(tmp_workspace: Path) -> 
         "workspace": {"root": str(tmp_workspace)},
         "autoOrchestrate": {"weekdays": [5, 6]},
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     cfg = load_config(tmp_workspace)
     assert cfg.auto_orchestrate.weekdays == (5, 6)
@@ -367,7 +376,7 @@ def test_load_config_auto_orchestrate_invalid_hour_raises(tmp_workspace: Path) -
         "workspace": {"root": str(tmp_workspace)},
         "autoOrchestrate": {"startHour": 25},
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     with pytest.raises(ConfigError, match="startHour"):
         load_config(tmp_workspace)
@@ -378,7 +387,7 @@ def test_load_config_auto_orchestrate_invalid_weekday_raises(tmp_workspace: Path
         "workspace": {"root": str(tmp_workspace)},
         "autoOrchestrate": {"weekdays": ["funday"]},
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     with pytest.raises(ConfigError, match="weekday"):
         load_config(tmp_workspace)
@@ -389,7 +398,7 @@ def test_load_config_auto_orchestrate_start_after_end_raises(tmp_workspace: Path
         "workspace": {"root": str(tmp_workspace)},
         "autoOrchestrate": {"startHour": 18, "endHour": 9},
     }
-    (tmp_workspace / "config.yaml").write_text(yaml.dump(config_data))
+    _write_config(tmp_workspace, yaml.dump(config_data))
 
     with pytest.raises(ConfigError, match="startHour"):
         load_config(tmp_workspace)
@@ -452,18 +461,18 @@ def test_save_and_load_auto_orchestrate_round_trip(tmp_workspace: Path) -> None:
 def test_find_workspace_root_walks_up(tmp_path: Path) -> None:
     root = tmp_path / "a" / "b"
     root.mkdir(parents=True)
-    # Place config.yaml at tmp_path level
-    (tmp_path / "config.yaml").write_text("workspace: {}\n")
+    # Mark tmp_path as a workspace root via the sentinel toolkit/config.yaml.
+    _write_config(tmp_path, "workspace: {}\n")
 
     found = find_workspace_root(start=root)
     assert found == tmp_path
 
 
 def test_find_workspace_root_raises_when_not_found(tmp_path: Path) -> None:
-    # tmp_path has no config.yaml and neither do its parents (within the test)
+    # tmp_path has no toolkit/config.yaml sentinel and neither do its parents.
     isolated = tmp_path / "isolated"
     isolated.mkdir()
-    with pytest.raises(ConfigError, match="No config.yaml found"):
+    with pytest.raises(ConfigError, match="No toolkit/config.yaml found"):
         find_workspace_root(start=isolated)
 
 

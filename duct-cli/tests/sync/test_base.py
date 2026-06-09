@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from duct import paths
 from duct.models import SyncResult
 from duct.sync.base import SyncCoordinator
 
@@ -30,7 +31,7 @@ class _FakeSource:
 
 
 def _read_state(root: Path) -> dict[str, float]:
-    state_path = root / ".sync_state.yaml"
+    state_path = paths.sync_state_file(root)
     if not state_path.exists():
         return {}
     return yaml.safe_load(state_path.read_text()) or {}
@@ -106,8 +107,9 @@ class TestTimestampOnSuccess:
         assert {r.source for r in results} == {"jira", "github"}
 
     def test_preexisting_timestamp_preserved_on_failure(self, tmp_path: Path):
-        state_path = tmp_path / ".sync_state.yaml"
+        state_path = paths.sync_state_file(tmp_path)
         original_ts = 1_700_000_000.0
+        state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(yaml.dump({"jira": original_ts}))
 
         coordinator = SyncCoordinator(tmp_path, {"jira": 0})

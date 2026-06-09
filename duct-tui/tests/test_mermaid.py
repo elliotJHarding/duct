@@ -82,14 +82,14 @@ def test_cache_path_uses_versioned_sha256_of_source():
 
 def test_render_returns_none_when_mmdc_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(mermaid.shutil, "which", lambda _name: None)
-    monkeypatch.setattr(mermaid, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(mermaid, "_cache_dir", lambda: tmp_path / "cache")
     assert mermaid.render_to_png("graph TD\nA --> B") is None
 
 
 def test_render_hits_cache_without_invoking_mmdc(monkeypatch, tmp_path):
     cache = tmp_path / "cache"
     cache.mkdir()
-    monkeypatch.setattr(mermaid, "CACHE_DIR", cache)
+    monkeypatch.setattr(mermaid, "_cache_dir", lambda: cache)
     src = "graph TD\nA --> B"
     cached = mermaid.cache_path(src)
     cached.parent.mkdir(parents=True, exist_ok=True)

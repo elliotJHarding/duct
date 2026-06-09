@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -10,8 +11,7 @@ from pathlib import Path
 
 import click
 
-import re
-
+from duct import paths
 from duct.cli.output import Col, error, get_json_mode, output, success, table
 from duct.cli.resolve import resolve_root, write_repo_completion_cache
 from duct.config import ConfigError, WorkspaceConfig, load_config
@@ -22,7 +22,6 @@ from duct.workspace import (
     read_issue_type,
     resolve_ticket_dir,
 )
-
 
 # ---------------------------------------------------------------------------
 # Repo discovery helpers
@@ -122,11 +121,11 @@ def _org_cache_filename(org: str) -> str:
 
 
 def _org_cache_path(workspace_root: Path, org: str) -> Path:
-    return workspace_root / ".cache" / "gh-org-repos" / _org_cache_filename(org)
+    return paths.gh_org_cache_dir(workspace_root) / _org_cache_filename(org)
 
 
 def _org_cache_dir(workspace_root: Path) -> Path:
-    return workspace_root / ".cache" / "gh-org-repos"
+    return paths.gh_org_cache_dir(workspace_root)
 
 
 def _read_org_cache(
@@ -445,7 +444,8 @@ def _fuzzy_select(prompt: str, choices: list[str]) -> str | None:
     """Prompt user with a fuzzy-searchable autocomplete list."""
     import questionary
     from prompt_toolkit.completion import FuzzyWordCompleter
-    from prompt_toolkit.styles import Style as PtStyle, merge_styles
+    from prompt_toolkit.styles import Style as PtStyle
+    from prompt_toolkit.styles import merge_styles
 
     # prompt_toolkit styles keyed to the exact class names used by the
     # completion menu and its fuzzy-match highlighting.

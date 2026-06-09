@@ -13,9 +13,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from duct import paths
+
 
 def heartbeat_path(root: Path) -> Path:
-    return root / ".duct" / "daemon.json"
+    return paths.daemon_heartbeat(root)
 
 
 def _now_iso() -> str:
@@ -55,7 +57,7 @@ def heartbeat_age_seconds(root: Path) -> float | None:
 # --- auto-orchestrate fire-slot (one run per (date, hour) window) ---
 
 def _orchestrate_state_path(root: Path) -> Path:
-    return root / ".duct" / "orchestrate_state.json"
+    return paths.orchestrate_state(root)
 
 
 def read_last_orchestrate_slot(root: Path) -> str | None:

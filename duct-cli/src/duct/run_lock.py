@@ -15,9 +15,11 @@ import os
 import time
 from pathlib import Path
 
+from duct import paths
+
 
 def _lock_path(root: Path) -> Path:
-    return root / ".duct" / "orchestrator.lock"
+    return paths.run_lock(root)
 
 
 def _pid_alive(pid: int) -> bool:

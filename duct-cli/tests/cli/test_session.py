@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 from duct.session import (
     apply_recency_decoration,
@@ -30,7 +31,8 @@ from duct.terminal import (
 
 
 def _init_workspace(root: Path) -> None:
-    (root / "config.yaml").write_text("workspace:\n  root: .\n")
+    paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
+    paths.config_file(root).write_text("workspace:\n  root: .\n")
 
 
 # ---------------------------------------------------------------------------
@@ -796,7 +798,7 @@ def test_session_start_skip_permissions(tmp_path: Path):
 def test_session_start_skip_permissions_requires_sandbox(tmp_path: Path):
     _init_workspace(tmp_path)
     # Write config with sandbox disabled
-    (tmp_path / "config.yaml").write_text(
+    paths.config_file(tmp_path).write_text(
         "workspace:\n  root: .\nsandbox:\n  enabled: false\n"
     )
     ticket_dir = tmp_path / "PROJ-1-feature"
@@ -818,7 +820,8 @@ def test_session_start_skip_permissions_requires_sandbox(tmp_path: Path):
 
 
 def test_session_start_uses_config_extra_args(tmp_path: Path):
-    (tmp_path / "config.yaml").write_text(
+    paths.toolkit_dir(tmp_path).mkdir(parents=True, exist_ok=True)
+    paths.config_file(tmp_path).write_text(
         "workspace:\n  root: .\nsession:\n  extraArgs:\n    - '--model'\n    - 'sonnet'\n"
     )
     ticket_dir = tmp_path / "PROJ-1-feature"

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import click
 
+from duct import paths
 from duct.config import ConfigError, find_workspace_root
 from duct.global_state import load_state
 
@@ -38,7 +39,7 @@ def resolve_root(ctx: click.Context) -> Path:
         return resolved
 
     state = load_state()
-    if state.workspace_path and (state.workspace_path / "config.yaml").exists():
+    if state.workspace_path and paths.is_workspace(state.workspace_path):
         return state.workspace_path
 
     return find_workspace_root()
@@ -63,7 +64,7 @@ def require_setup(ctx: click.Context) -> Path:
         ctx.exit(1)
         raise SystemExit(1) from exc  # pragma: no cover — keeps type-checkers happy
 
-    if not (root / "config.yaml").exists():
+    if not paths.is_workspace(root):
         click.echo(
             "duct is not set up — run `duct` to complete setup.",
             err=True,
@@ -74,8 +75,7 @@ def require_setup(ctx: click.Context) -> Path:
 
 
 def write_repo_completion_cache(root: Path, repo_names: list[str]) -> None:
-    """Write repo names to .cache/completions/repos.txt for shell completion."""
-    cache_dir = root / ".cache" / "completions"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file = cache_dir / "repos.txt"
+    """Write repo names to .duct/cache/completions/repos.txt for shell completion."""
+    cache_file = paths.completions_cache(root)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text("\n".join(sorted(repo_names)) + "\n", encoding="utf-8")

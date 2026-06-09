@@ -1,6 +1,6 @@
 """Lightweight always-on timing instrumentation.
 
-Records spans into ``~/.duct/perf.jsonl`` as one JSON line per span. The
+Records spans into ``~/.config/duct/logs/perf.jsonl`` as one JSON line per span. The
 log is capped at ``_MAX_ROWS`` and rolled in place when the cap is hit.
 
 Usage:
@@ -30,7 +30,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-_LOG_PATH = Path.home() / ".duct" / "perf.jsonl"
+from duct import paths
+
+
+def _log_path() -> Path:
+    return paths.perf_log()
+
+
 _MAX_ROWS = 5000
 _ROLL_TARGET = 4000  # keep this many when rolling
 _lock = threading.Lock()
@@ -60,9 +66,9 @@ def record(name: str, duration_ms: float, **metadata: Any) -> None:
     if metadata:
         entry["meta"] = metadata
     try:
-        _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _log_path().parent.mkdir(parents=True, exist_ok=True)
         with _lock:
-            with _LOG_PATH.open("a", encoding="utf-8") as f:
+            with _log_path().open("a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, default=str))
                 f.write("\n")
             _maybe_roll()
@@ -88,10 +94,10 @@ def Timer(name: str, **metadata: Any) -> Iterator[dict]:
 
 def recent(name: str | None = None, limit: int = 200) -> list[dict]:
     """Return the most recent entries, newest first. Filters by name if given."""
-    if not _LOG_PATH.exists():
+    if not _log_path().exists():
         return []
     try:
-        lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
+        lines = _log_path().read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
     out: list[dict] = []
@@ -138,7 +144,7 @@ def summarise(entries: Iterable[dict]) -> list[dict]:
 def clear() -> None:
     """Delete the log file. Used by tests."""
     try:
-        _LOG_PATH.unlink()
+        _log_path().unlink()
     except FileNotFoundError:
         pass
 
@@ -146,19 +152,19 @@ def clear() -> None:
 def _maybe_roll() -> None:
     """Trim the log when it grows past ``_MAX_ROWS``."""
     try:
-        size_check = _LOG_PATH.stat().st_size
+        size_check = _log_path().stat().st_size
     except OSError:
         return
     # Cheap pre-check: if the file is plausibly under the row cap, skip.
     if size_check < _MAX_ROWS * 200:
         return
     try:
-        lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
+        lines = _log_path().read_text(encoding="utf-8").splitlines()
     except OSError:
         return
     if len(lines) <= _MAX_ROWS:
         return
     keep = lines[-_ROLL_TARGET:]
-    tmp = _LOG_PATH.with_suffix(".jsonl.tmp")
+    tmp = _log_path().with_suffix(".jsonl.tmp")
     tmp.write_text("\n".join(keep) + "\n", encoding="utf-8")
-    os.replace(tmp, _LOG_PATH)
+    os.replace(tmp, _log_path())

@@ -5,18 +5,25 @@ from pathlib import Path
 import yaml
 from click.testing import CliRunner
 
+from duct import paths
 from duct.cli.main import cli
 
 
 def test_init_creates_all_files(tmp_path: Path) -> None:
-    """init should create config.yaml, WORKFLOW.md, and .claude/CLAUDE.md."""
+    """init should create the toolkit config + the generated .claude/CLAUDE.md shim."""
     runner = CliRunner()
     result = runner.invoke(cli, ["--workspace-root", str(tmp_path), "init"])
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "config.yaml").exists()
-    assert (tmp_path / "WORKFLOW.md").exists()
-    assert (tmp_path / ".claude" / "CLAUDE.md").exists()
+    assert paths.config_file(tmp_path).exists()
+    assert paths.workflow_md(tmp_path).exists()
+
+    claude_md = paths.root_claude_md(tmp_path)
+    assert claude_md.exists()
+    # The root .claude/CLAUDE.md is now a two-line shim importing the toolkit.
+    shim = claude_md.read_text(encoding="utf-8")
+    assert "@../toolkit/CLAUDE.md" in shim
+    assert "@../toolkit/wiki/INDEX.md" in shim
 
 
 def test_init_is_idempotent(tmp_path: Path) -> None:
@@ -27,7 +34,7 @@ def test_init_is_idempotent(tmp_path: Path) -> None:
     runner.invoke(cli, ["--workspace-root", str(tmp_path), "init"])
 
     # Write custom content to WORKFLOW.md
-    workflow_path = tmp_path / "WORKFLOW.md"
+    workflow_path = paths.workflow_md(tmp_path)
     custom_content = "# My Custom Workflow\n"
     workflow_path.write_text(custom_content)
 
@@ -44,8 +51,8 @@ def test_init_respects_workspace_root(tmp_path: Path) -> None:
     result = runner.invoke(cli, ["--workspace-root", str(target), "init"])
 
     assert result.exit_code == 0, result.output
-    assert (target / "config.yaml").exists()
-    assert (target / "WORKFLOW.md").exists()
+    assert paths.config_file(target).exists()
+    assert paths.workflow_md(target).exists()
 
 
 def test_init_config_yaml_is_valid(tmp_path: Path) -> None:
@@ -53,7 +60,7 @@ def test_init_config_yaml_is_valid(tmp_path: Path) -> None:
     runner = CliRunner()
     runner.invoke(cli, ["--workspace-root", str(tmp_path), "init"])
 
-    config_path = tmp_path / "config.yaml"
+    config_path = paths.config_file(tmp_path)
     data = yaml.safe_load(config_path.read_text())
     assert isinstance(data, dict)
     assert "workspace" in data

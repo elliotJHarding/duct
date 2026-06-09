@@ -7,8 +7,8 @@ from textwrap import dedent
 
 import yaml
 
+from duct import paths
 from duct.actions import (
-    WORKSPACE_ACTIONS_FILENAME,
     get_actions,
     get_all_actions,
     get_workspace_actions,
@@ -17,7 +17,8 @@ from duct.actions import (
 
 
 def _write_workspace_actions(root: Path, actions: list[dict]) -> Path:
-    path = root / WORKSPACE_ACTIONS_FILENAME
+    path = paths.workspace_actions_file(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.dump({"actions": actions}, sort_keys=False))
     return path
 
@@ -148,7 +149,9 @@ class TestWorkspaceActions:
         assert actions[0].detail["withdrawal_reason"] == "Ticket closed"
 
     def test_malformed_yaml_returns_empty(self, tmp_path: Path) -> None:
-        (tmp_path / WORKSPACE_ACTIONS_FILENAME).write_text("not: yaml: [unbalanced")
+        path = paths.workspace_actions_file(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("not: yaml: [unbalanced")
 
         assert get_workspace_actions(tmp_path) == []
 
@@ -160,7 +163,8 @@ class TestWorkspaceActions:
         without the wrapping `actions:` key, so LLM-authored files sometimes
         land as bare lists. Accepting them avoids a TUI-wide crash.
         """
-        path = tmp_path / WORKSPACE_ACTIONS_FILENAME
+        path = paths.workspace_actions_file(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(dedent("""\
             - id: wf-1
               type: improve_workflow

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from duct import paths
 from duct.cli.completion_cmd import completion
 from duct.cli.output import error, get_json_mode, output, section, success, warn
 from duct.cli.perf_cmd import perf_cmd
@@ -61,9 +62,9 @@ def _run_health_check(ctx: click.Context) -> None:
     section("Workspace")
     try:
         root = resolve_root(ctx)
-        all_ok &= _check("config.yaml found", True, str(root / "config.yaml"))
+        all_ok &= _check("toolkit/config.yaml found", True, str(paths.config_file(root)))
     except Exception as exc:
-        _check("config.yaml found", False, str(exc))
+        _check("toolkit/config.yaml found", False, str(exc))
         error("Cannot continue without a workspace. Run `duct` to complete setup.")
         ctx.exit(1)
         return
@@ -85,7 +86,7 @@ def _run_health_check(ctx: click.Context) -> None:
         all_ok &= _check("jira.jql set", bool(cfg.jira_jql), jql_detail)
 
     # 4. Workspace files
-    all_ok &= _check("WORKFLOW.md exists", (root / "WORKFLOW.md").exists())
+    all_ok &= _check("WORKFLOW.md exists", paths.workflow_md(root).exists())
 
     # 5. Environment variables / auth
     section("Authentication")
