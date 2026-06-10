@@ -47,6 +47,16 @@ def test_setup_aborts_on_non_tty(runner: CliRunner) -> None:
     assert "interactive terminal" in (result.stderr or result.output)
 
 
+def test_setup_launches_wizard_on_tty(
+    monkeypatch: pytest.MonkeyPatch, runner: CliRunner,
+) -> None:
+    """Without --plain, an interactive `duct setup` runs the Textual wizard."""
+    _fake_tty(monkeypatch)
+    monkeypatch.setattr("duct.cli.setup_wizard.app.run_wizard", lambda: 0)
+    result = runner.invoke(cli, ["setup"])
+    assert result.exit_code == 0, (result.output, result.stderr)
+
+
 def test_setup_full_happy_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: CliRunner,
 ) -> None:
@@ -57,15 +67,15 @@ def test_setup_full_happy_path(
 
     # Stub out the live API probes so the test doesn't hit the network.
     monkeypatch.setattr(
-        "duct.cli.setup_cmd._jira_user",
+        "duct.cli.setup_core.jira_user",
         lambda *_args, **_kwargs: (True, "Test User"),
     )
     monkeypatch.setattr(
-        "duct.cli.setup_cmd._jql_count",
+        "duct.cli.setup_core.jql_count",
         lambda *_args, **_kwargs: 42,
     )
     monkeypatch.setattr(
-        "duct.cli.setup_cmd._github_user",
+        "duct.cli.setup_core.github_user",
         lambda _token: (True, "octocat", ["acme", "globex"]),
     )
     # Skip the `gh auth login` shell-out and shell-rc edit.
@@ -75,7 +85,7 @@ def test_setup_full_happy_path(
     # ``run_setup``: workspace path → Jira domain → Jira email → Jira token →
     # keep default JQL? (y) → no gh CLI present, prompt for GH PAT → orgs
     # input → keep ~/workspace? → keep ~/projects? → add another? (n) →
-    # shell completion bail (unknown shell) → first sync? (n).
+    # enable wiki? (n) → shell completion bail (unknown shell) → first sync? (n).
     inputs = "\n".join([
         str(workspace),     # workspace path
         "acme.atlassian.net",  # jira domain
@@ -87,11 +97,12 @@ def test_setup_full_happy_path(
         "n",                   # drop ~/workspace
         "n",                   # drop ~/projects
         "n",                   # add another? no
+        "n",                   # enable wiki? no
         "n",                   # first sync? no
         "",
     ])
 
-    result = runner.invoke(cli, ["setup"], input=inputs)
+    result = runner.invoke(cli, ["setup", "--plain"], input=inputs)
     assert result.exit_code == 0, (result.output, result.stderr)
 
     # State file points at the workspace.
@@ -141,9 +152,9 @@ def test_setup_skips_jira_step_when_already_configured(
         captured.append((domain, email, token))
         return True, "Test User"
 
-    monkeypatch.setattr("duct.cli.setup_cmd._jira_user", _spy_jira_user)
-    monkeypatch.setattr("duct.cli.setup_cmd._jql_count", lambda *_a, **_kw: 7)
-    monkeypatch.setattr("duct.cli.setup_cmd._github_user", lambda _t: (True, "octocat", []))
+    monkeypatch.setattr("duct.cli.setup_core.jira_user", _spy_jira_user)
+    monkeypatch.setattr("duct.cli.setup_core.jql_count", lambda *_a, **_kw: 7)
+    monkeypatch.setattr("duct.cli.setup_core.github_user", lambda _t: (True, "octocat", []))
     monkeypatch.setattr("shutil.which", lambda name: None)
 
     inputs = "\n".join([
@@ -151,10 +162,11 @@ def test_setup_skips_jira_step_when_already_configured(
         "y",                  # keep default JQL
         "",                   # no GH PAT
         "n", "n", "n",        # drop both default repo paths, add nothing
+        "n",                  # enable wiki? no
         "n",                  # first sync skipped
         "",
     ])
-    result = runner.invoke(cli, ["setup"], input=inputs)
+    result = runner.invoke(cli, ["setup", "--plain"], input=inputs)
     assert result.exit_code == 0, (result.output, result.stderr)
 
     # The Jira step probed once with the existing values — no re-prompt.

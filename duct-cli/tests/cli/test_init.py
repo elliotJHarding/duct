@@ -20,10 +20,25 @@ def test_init_creates_all_files(tmp_path: Path) -> None:
 
     claude_md = paths.root_claude_md(tmp_path)
     assert claude_md.exists()
-    # The root .claude/CLAUDE.md is now a two-line shim importing the toolkit.
     shim = claude_md.read_text(encoding="utf-8")
     assert "@../toolkit/CLAUDE.md" in shim
+    # The wiki is opt-in (off by default) — no wiki wiring in a fresh shim.
+    assert "@../toolkit/wiki/INDEX.md" not in shim
+    assert not paths.wiki_dir(tmp_path).exists()
+
+
+def test_init_wires_wiki_when_enabled(tmp_path: Path) -> None:
+    """With wiki.enabled, init seeds the wiki and the shim imports its index."""
+    from duct.cli.setup_core import set_wiki
+
+    runner = CliRunner()
+    runner.invoke(cli, ["--workspace-root", str(tmp_path), "init"])
+    set_wiki(tmp_path, True)
+
+    shim = paths.root_claude_md(tmp_path).read_text(encoding="utf-8")
     assert "@../toolkit/wiki/INDEX.md" in shim
+    assert "wiki-reader" in shim  # generated guidance travels with the toggle
+    assert paths.wiki_index(tmp_path).exists()
 
 
 def test_init_is_idempotent(tmp_path: Path) -> None:

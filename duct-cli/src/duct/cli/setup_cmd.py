@@ -1,11 +1,12 @@
 """duct setup — guided, interactive onboarding.
 
-The flow walks the user through every configuration step the rest of duct
-relies on: workspace location, Jira domain + credentials, JQL, GitHub
-authentication and orgs, repo paths, tool availability, shell completion,
-and an optional first sync. Each step validates against a live source of
-truth (an HTTP call, a filesystem check, ``shutil.which``) so the user
-sees a green tick the moment a value is good.
+Two front-ends share the logic in :mod:`duct.cli.setup_core`:
+
+- The full-screen Textual wizard (:mod:`duct.cli.setup_wizard`) — the
+  default on an interactive terminal. Configures duct with live previews
+  and ends with a workflow tutorial.
+- The plain prompt flow in this module — the fallback for unusual
+  terminals, forced with ``duct setup --plain``.
 
 The same entry point doubles as the bare-``duct`` first-run path: when
 state is incomplete, ``main.cli`` calls :func:`run_setup` directly.
@@ -13,8 +14,6 @@ state is incomplete, ``main.cli`` calls :func:`run_setup` directly.
 
 from __future__ import annotations
 
-import base64
-import os
 import shutil
 import subprocess
 import sys
@@ -22,14 +21,10 @@ from pathlib import Path
 
 import click
 
+from duct.cli import setup_core
 from duct.cli.init_cmd import bootstrap_workspace
 from duct.cli.output import output, section, success, warn
-from duct.config import (
-    SyncIntervals,
-    WorkspaceConfig,
-    load_config,
-    save_config,
-)
+from duct.config import WorkspaceConfig, load_config
 from duct.credentials import (
     Credentials,
     load_credentials,
@@ -39,9 +34,6 @@ from duct.credentials import (
     save_credentials,
 )
 from duct.global_state import set_workspace_path, state_dir
-
-_JIRA_TOKEN_URL = "https://id.atlassian.com/manage-profile/security/api-tokens"
-
 
 # ---------------------------------------------------------------------------
 # Small UI helpers — local to setup so we can tweak phrasing without touching
@@ -81,13 +73,12 @@ def _is_interactive() -> bool:
 
 
 def _step_workspace(default: Path) -> Path:
-    section("Step 1 of 7 · Workspace")
+    section("Step 1 of 8 · Workspace")
     _explain(
         "The workspace is where duct mirrors your Jira tickets as local "
         "folders, one per ticket. We'll create the directory if it doesn't "
         "exist and seed a toolkit/ folder holding config.yaml, WORKFLOW.md, "
-        "agents/, wiki/, and subagents/; a root .claude/ folder is generated "
-        "from it.",
+        "and agents/; a root .claude/ folder is generated from it.",
         "Press Enter to accept the default, or type a different path.",
     )
     prompt = "Workspace path"
@@ -107,56 +98,14 @@ def _step_workspace(default: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _jira_user(domain: str, email: str, token: str) -> tuple[bool, str]:
-    """Probe ``GET /myself`` and return (ok, detail).
-
-    ``detail`` is the display name on success or a short error code on
-    failure. Imported lazily so import-time cost stays cheap.
-    """
-    import httpx
-
-    try:
-        credentials = base64.b64encode(f"{email}:{token}".encode()).decode()
-        response = httpx.get(
-            f"https://{domain}/rest/api/3/myself",
-            headers={
-                "Authorization": f"Basic {credentials}",
-                "Accept": "application/json",
-            },
-            timeout=10,
-        )
-    except httpx.HTTPError as exc:
-        return False, f"network: {exc.__class__.__name__}"
-
-    if response.status_code == 200:
-        return True, response.json().get("displayName") or "unknown"
-    if response.status_code == 401:
-        return False, "401 — wrong email or token"
-    if response.status_code == 404:
-        return False, "404 — domain not found"
-    return False, f"HTTP {response.status_code}"
-
-
-def _git_email_default() -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "config", "--global", "user.email"],
-            capture_output=True, text=True, timeout=2,
-        )
-    except (FileNotFoundError, subprocess.SubprocessError):
-        return None
-    value = result.stdout.strip()
-    return value or None
-
-
 def _step_jira(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
-    section("Step 2 of 7 · Jira")
+    section("Step 2 of 8 · Jira")
     _explain(
         "duct fetches your tickets via the Jira REST API. We need your "
         "Atlassian domain, your login email, and an API token. The token "
         "stays on this machine — duct stores it in your OS keychain, where "
         "both the shell and the background daemon can read it.",
-        f"Create a token at: {_JIRA_TOKEN_URL}",
+        f"Create a token at: {setup_core.JIRA_TOKEN_URL}",
     )
 
     creds = load_credentials()
@@ -164,7 +113,7 @@ def _step_jira(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
     existing_token = creds.jira_token or resolve_jira_token()
 
     if cfg.jira_domain and existing_email and existing_token:
-        ok, detail = _jira_user(cfg.jira_domain, existing_email, existing_token)
+        ok, detail = setup_core.jira_user(cfg.jira_domain, existing_email, existing_token)
         if ok:
             _ok("Jira already configured", f"authenticated as {detail}")
             # Make sure the keychain carries the values forward.
@@ -184,7 +133,7 @@ def _step_jira(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
             "Jira domain", default=domain or None,
             show_default=bool(domain),
         ).strip().lower()
-        email_default = email or _git_email_default()
+        email_default = email or setup_core.git_email_default()
         email = click.prompt(
             "Jira email", default=email_default,
             show_default=bool(email_default),
@@ -201,7 +150,7 @@ def _step_jira(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
                 hide_input=True, default="", show_default=False,
             ).strip()
 
-        ok, detail = _jira_user(domain, email, token)
+        ok, detail = setup_core.jira_user(domain, email, token)
         if ok:
             _ok("Jira reachable", f"authenticated as {detail}")
             break
@@ -210,23 +159,7 @@ def _step_jira(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
             warn("Continuing with unverified Jira credentials.")
             break
 
-    cfg = WorkspaceConfig(
-        root=cfg.root,
-        jira_jql=cfg.jira_jql,
-        jira_domain=domain,
-        repo_paths=cfg.repo_paths,
-        github_orgs=cfg.github_orgs,
-        sync_intervals=cfg.sync_intervals,
-        sandbox=cfg.sandbox,
-        session=cfg.session,
-        status=cfg.status,
-        session_status=cfg.session_status,
-        display=cfg.display,
-        notifications=cfg.notifications,
-        activity=cfg.activity,
-        auto_orchestrate=cfg.auto_orchestrate,
-    )
-    save_config(cfg, root)
+    cfg = setup_core.update_config(root, jira_domain=domain)
     save_credentials(Credentials(
         jira_email=email, jira_token=token, gh_token=creds.gh_token,
     ))
@@ -238,30 +171,8 @@ def _step_jira(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
 # ---------------------------------------------------------------------------
 
 
-def _jql_count(domain: str, email: str, token: str, jql: str) -> int | None:
-    import httpx
-
-    try:
-        credentials = base64.b64encode(f"{email}:{token}".encode()).decode()
-        response = httpx.post(
-            f"https://{domain}/rest/api/3/search/approximate-count",
-            headers={
-                "Authorization": f"Basic {credentials}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            json={"jql": jql},
-            timeout=10,
-        )
-    except httpx.HTTPError:
-        return None
-    if response.status_code == 200:
-        return response.json().get("count")
-    return None
-
-
 def _step_jql(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
-    section("Step 3 of 7 · Ticket filter (JQL)")
+    section("Step 3 of 8 · Ticket filter (JQL)")
     _explain(
         "JQL controls which tickets duct syncs into your workspace. The "
         "default picks every ticket currently assigned to you that isn't "
@@ -278,30 +189,14 @@ def _step_jql(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
     email = resolve_jira_email()
     token = resolve_jira_token()
     if cfg.jira_domain and email and token:
-        count = _jql_count(cfg.jira_domain, email, token, new_jql)
+        count = setup_core.jql_count(cfg.jira_domain, email, token, new_jql)
         if count is None:
             warn("Could not verify JQL — the syntax may be wrong; sync will retry.")
         else:
             _ok("JQL valid", f"{count} matching issues")
 
     if new_jql != cfg.jira_jql:
-        cfg = WorkspaceConfig(
-            root=cfg.root,
-            jira_jql=new_jql,
-            jira_domain=cfg.jira_domain,
-            repo_paths=cfg.repo_paths,
-            github_orgs=cfg.github_orgs,
-            sync_intervals=cfg.sync_intervals,
-            sandbox=cfg.sandbox,
-            session=cfg.session,
-            status=cfg.status,
-            session_status=cfg.session_status,
-            display=cfg.display,
-            notifications=cfg.notifications,
-            activity=cfg.activity,
-            auto_orchestrate=cfg.auto_orchestrate,
-        )
-        save_config(cfg, root)
+        cfg = setup_core.update_config(root, jira_jql=new_jql)
     return cfg
 
 
@@ -310,38 +205,8 @@ def _step_jql(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
 # ---------------------------------------------------------------------------
 
 
-def _github_user(token: str) -> tuple[bool, str, list[str]]:
-    """Return (ok, login, orgs). ``orgs`` empty on failure."""
-    import httpx
-
-    try:
-        user_resp = httpx.get(
-            "https://api.github.com/user",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            timeout=10,
-        )
-    except httpx.HTTPError as exc:
-        return False, f"network: {exc.__class__.__name__}", []
-    if user_resp.status_code != 200:
-        return False, f"HTTP {user_resp.status_code}", []
-
-    login = user_resp.json().get("login") or "unknown"
-    orgs: list[str] = []
-    try:
-        org_resp = httpx.get(
-            "https://api.github.com/user/orgs",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            timeout=10,
-        )
-        if org_resp.status_code == 200:
-            orgs = [o.get("login") for o in org_resp.json() if o.get("login")]
-    except httpx.HTTPError:
-        pass
-    return True, login, orgs
-
-
 def _step_github(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
-    section("Step 4 of 7 · GitHub")
+    section("Step 4 of 8 · GitHub")
     _explain(
         "duct tracks PRs and CI runs against each ticket by polling the "
         "GitHub API. If you've already run `gh auth login`, we'll borrow "
@@ -352,7 +217,7 @@ def _step_github(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
 
     token = resolve_gh_token()
     if token:
-        ok, login, orgs = _github_user(token)
+        ok, login, orgs = setup_core.github_user(token)
         if ok:
             _ok("GitHub reachable", f"authenticated as {login}")
         else:
@@ -378,7 +243,7 @@ def _step_github(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
         warn("GitHub sync is disabled until a token is provided.")
         return cfg
 
-    ok, login, orgs = _github_user(token)
+    ok, login, orgs = setup_core.github_user(token)
     if not ok:
         _fail("GitHub auth failed", login)
         return cfg
@@ -427,23 +292,7 @@ def _step_github(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
             except (ValueError, IndexError):
                 warn(f"  ignoring '{piece}'")
         if picked:
-            cfg = WorkspaceConfig(
-                root=cfg.root,
-                jira_jql=cfg.jira_jql,
-                jira_domain=cfg.jira_domain,
-                repo_paths=cfg.repo_paths,
-                github_orgs=tuple(picked),
-                sync_intervals=cfg.sync_intervals,
-                sandbox=cfg.sandbox,
-                session=cfg.session,
-                status=cfg.status,
-                session_status=cfg.session_status,
-                display=cfg.display,
-                notifications=cfg.notifications,
-                activity=cfg.activity,
-                auto_orchestrate=cfg.auto_orchestrate,
-            )
-            save_config(cfg, root)
+            cfg = setup_core.update_config(root, github_orgs=tuple(picked))
             _ok("GitHub orgs set", ", ".join(picked))
     elif cfg.github_orgs:
         _skip("GitHub orgs unchanged", ", ".join(cfg.github_orgs))
@@ -456,7 +305,7 @@ def _step_github(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
 
 
 def _step_repo_paths(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
-    section("Step 5 of 7 · Repo paths")
+    section("Step 5 of 8 · Repo paths")
     _explain(
         "duct scans these directories to find local clones of git repos "
         "referenced by tickets. When a ticket touches github.com/acme/foo, "
@@ -483,23 +332,7 @@ def _step_repo_paths(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
         kept.append(path)
 
     if tuple(str(p) for p in kept) != tuple(str(p) for p in cfg.repo_paths):
-        cfg = WorkspaceConfig(
-            root=cfg.root,
-            jira_jql=cfg.jira_jql,
-            jira_domain=cfg.jira_domain,
-            repo_paths=kept,
-            github_orgs=cfg.github_orgs,
-            sync_intervals=cfg.sync_intervals,
-            sandbox=cfg.sandbox,
-            session=cfg.session,
-            status=cfg.status,
-            session_status=cfg.session_status,
-            display=cfg.display,
-            notifications=cfg.notifications,
-            activity=cfg.activity,
-            auto_orchestrate=cfg.auto_orchestrate,
-        )
-        save_config(cfg, root)
+        cfg = setup_core.update_config(root, repo_paths=kept)
     _ok("repo paths set", ", ".join(str(p) for p in kept) or "(none)")
     return cfg
 
@@ -510,28 +343,19 @@ def _step_repo_paths(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
 
 
 def _step_tools() -> None:
-    section("Step 6 of 7 · External tools")
+    section("Step 6 of 8 · External tools")
     _explain(
         "duct shells out to a few external CLIs. `claude` and `git` are "
         "required; `gh` and `mmdc` are optional polish. This step is "
         "read-only — we don't install anything for you.",
     )
-    if shutil.which("claude"):
-        _ok("claude CLI on PATH")
-    else:
-        _fail("claude CLI on PATH", "install from https://docs.claude.com/claude-code")
-    if shutil.which("git"):
-        _ok("git on PATH")
-    else:
-        _fail("git on PATH", "install git before running sync")
-    if shutil.which("gh"):
-        _ok("gh CLI on PATH")
-    else:
-        _skip("gh CLI on PATH", "optional — install for the easiest GitHub auth")
-    if shutil.which("mmdc"):
-        _ok("mmdc on PATH")
-    else:
-        _skip("mmdc on PATH", "optional — `npm i -g @mermaid-js/mermaid-cli` for mermaid diagrams")
+    for tool in setup_core.tool_statuses():
+        if tool.present:
+            _ok(f"{tool.name} on PATH")
+        elif tool.required:
+            _fail(f"{tool.name} on PATH", tool.hint)
+        else:
+            _skip(f"{tool.name} on PATH", tool.hint)
 
 
 # ---------------------------------------------------------------------------
@@ -539,42 +363,56 @@ def _step_tools() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _step_wiki(cfg: WorkspaceConfig, root: Path) -> WorkspaceConfig:
+    section("Step 7 of 8 · Workspace wiki")
+    _explain(
+        "duct can keep a curated knowledge base in toolkit/wiki/ — lessons "
+        "from corrections, project conventions, domain notes, and "
+        "environment quirks — written and consulted by three Claude Code "
+        "subagents that sessions invoke automatically. Off by default; "
+        "sessions run leaner without it. Change it any time by re-running "
+        "`duct setup`.",
+    )
+    enabled = click.confirm(
+        "  Enable the workspace wiki?", default=cfg.wiki.enabled,
+    )
+    cfg = setup_core.set_wiki(root, enabled)
+    if enabled:
+        _ok("workspace wiki enabled", "toolkit/wiki/")
+    else:
+        _skip("workspace wiki", "disabled — enable later via `duct setup`")
+        if setup_core.toolkit_claude_mentions_wiki(root):
+            warn(
+                "toolkit/CLAUDE.md still mentions the wiki — duct never edits "
+                "user files, so remove that section yourself."
+            )
+    return cfg
+
+
 def _step_shell_completion() -> None:
-    section("Step 7 of 7 · Shell completion")
+    section("Step 8 of 8 · Shell completion")
     _explain(
         "duct ships with tab-completion for ticket keys, repo names, "
         "session IDs, and agent names. We add a one-line activation hook "
         "to your shell rc so completion is available in new shells.",
     )
-    shell = os.environ.get("SHELL", "")
-    if "zsh" in shell:
-        shell_name, rc_path = "zsh", Path.home() / ".zshrc"
-        activation = 'autoload -Uz compinit && compinit -C 2>/dev/null; eval "$(_DUCT_COMPLETE=zsh_source duct)"'
-    elif "bash" in shell:
-        shell_name, rc_path = "bash", Path.home() / ".bashrc"
-        activation = 'eval "$(_DUCT_COMPLETE=bash_source duct)"'
-    elif "fish" in shell:
-        shell_name, rc_path = "fish", Path.home() / ".config" / "fish" / "config.fish"
-        activation = '_DUCT_COMPLETE=fish_source duct | source'
-    else:
+    completion = setup_core.shell_completion_status()
+    if completion is None:
         _skip("shell completion", "unknown shell")
         return
 
-    rc_content = rc_path.read_text() if rc_path.exists() else ""
-    if "_DUCT_COMPLETE" in rc_content:
-        _ok(f"shell completion ({shell_name})", "already enabled")
+    if completion.enabled:
+        _ok(f"shell completion ({completion.shell_name})", "already enabled")
         return
 
-    output(f"  [yellow]?[/yellow] shell completion ({shell_name}) not enabled")
-    output(f"         [dim]would append to {rc_path}:[/dim]")
-    output(f"         [dim]{activation}[/dim]")
+    output(f"  [yellow]?[/yellow] shell completion ({completion.shell_name}) not enabled")
+    output(f"         [dim]would append to {completion.rc_path}:[/dim]")
+    output(f"         [dim]{completion.activation}[/dim]")
     if click.confirm("         Apply this?", default=True):
-        rc_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(rc_path, "a") as f:
-            f.write(f"\n{activation}\n")
-        _ok(f"shell completion ({shell_name})", f"added to {rc_path.name}")
+        setup_core.enable_shell_completion(completion)
+        _ok(f"shell completion ({completion.shell_name})", f"added to {completion.rc_path.name}")
     else:
-        _skip(f"shell completion ({shell_name})", "skipped")
+        _skip(f"shell completion ({completion.shell_name})", "skipped")
 
 
 # ---------------------------------------------------------------------------
@@ -583,9 +421,8 @@ def _step_shell_completion() -> None:
 
 
 def _step_daemon(root: Path) -> None:
-    if sys.platform != "darwin":
+    if not setup_core.daemon_supported():
         return
-    from duct.cli.daemon_cmd import install_agent, is_installed
 
     section("Optional · Background daemon")
     _explain(
@@ -594,12 +431,12 @@ def _step_daemon(root: Path) -> None:
         "scheduled orchestrator passes — all without the TUI open. It installs "
         "as a launchd agent that starts automatically at login.",
     )
-    if is_installed():
+    if setup_core.daemon_installed():
         _ok("daemon", "already installed")
         return
     if click.confirm("         Install the background daemon now?", default=True):
         try:
-            install_agent(root)
+            setup_core.install_daemon(root)
             _ok("daemon", "installed and started")
         except Exception as exc:  # noqa: BLE001 — report and continue setup
             _fail("daemon", str(exc))
@@ -629,17 +466,12 @@ def _step_first_sync(ctx: click.Context, cfg: WorkspaceConfig) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Entry points
 # ---------------------------------------------------------------------------
 
 
-def run_setup(ctx: click.Context) -> None:
-    """Drive the guided flow from start to finish.
-
-    Safe to call when state is partially complete: every step's first action
-    is to look at the current world and either skip itself or pick up where
-    the last attempt left off.
-    """
+def run_setup(ctx: click.Context, plain: bool = False) -> None:
+    """Dispatch to the wizard (TTY default) or the plain prompt flow."""
     if not _is_interactive():
         click.echo(
             "duct setup needs an interactive terminal. Re-run from a TTY, "
@@ -650,6 +482,26 @@ def run_setup(ctx: click.Context) -> None:
         ctx.exit(1)
         return
 
+    if not plain:
+        from duct.cli.setup_wizard.app import run_wizard
+
+        exit_code = run_wizard()
+        if exit_code:
+            ctx.exit(exit_code)
+        if setup_core.state_is_ready():
+            success("duct is ready. Try `duct status` or launch the TUI with `duct-tui`.")
+        return
+
+    _run_plain_setup(ctx)
+
+
+def _run_plain_setup(ctx: click.Context) -> None:
+    """Drive the prompt-based flow from start to finish.
+
+    Safe to call when state is partially complete: every step's first action
+    is to look at the current world and either skip itself or pick up where
+    the last attempt left off.
+    """
     output("")
     output("[bold]Welcome to duct.[/bold]")
     output("")
@@ -660,7 +512,7 @@ def run_setup(ctx: click.Context) -> None:
     )
     output("")
     output(
-        "[dim]This setup has 7 steps plus an optional first sync. Each "
+        "[dim]This setup has 8 steps plus an optional first sync. Each "
         "prompt has a sensible default — press Enter to accept it. You "
         "can quit at any time; re-run `duct` and we'll pick up where you "
         "left off.[/dim]"
@@ -669,21 +521,16 @@ def run_setup(ctx: click.Context) -> None:
     output(f"[dim]State will live in {state_dir()}/.[/dim]")
     output("")
 
-    default_workspace = Path.home() / "workspace" / "duct"
-    root = _step_workspace(default_workspace)
+    root = _step_workspace(setup_core.default_workspace())
 
     cfg = load_config(root)
-    if cfg.sync_intervals is None:  # pragma: no cover — defensive
-        cfg = WorkspaceConfig(
-            root=cfg.root, jira_domain=cfg.jira_domain,
-            sync_intervals=SyncIntervals(),
-        )
 
     cfg = _step_jira(cfg, root)
     cfg = _step_jql(cfg, root)
     cfg = _step_github(cfg, root)
     cfg = _step_repo_paths(cfg, root)
     _step_tools()
+    cfg = _step_wiki(cfg, root)
     _step_shell_completion()
     _step_daemon(root)
     _step_first_sync(ctx, cfg)
@@ -693,10 +540,15 @@ def run_setup(ctx: click.Context) -> None:
 
 
 @click.command(name="setup")
+@click.option(
+    "--plain", is_flag=True,
+    help="Use the prompt-based flow instead of the full-screen wizard.",
+)
 @click.pass_context
-def setup(ctx: click.Context) -> None:
+def setup(ctx: click.Context, plain: bool) -> None:
     """Walk through every prerequisite duct needs to run.
 
-    Re-runnable — already-configured steps are auto-skipped.
+    Re-runnable — when duct is already configured the wizard opens a phase
+    picker so you can revisit any step or re-take the workflow tour.
     """
-    run_setup(ctx)
+    run_setup(ctx, plain=plain)

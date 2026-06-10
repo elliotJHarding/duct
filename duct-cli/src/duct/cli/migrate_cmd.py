@@ -110,11 +110,19 @@ def migrate_workspace_layout(root: Path, *, apply: bool) -> list[tuple[Path, Pat
         paths.toolkit_dir(root).mkdir(parents=True, exist_ok=True)
         _apply_moves(moves)
         ensure_toolkit_repo(root)
-        materialise_root_claude(root)
+        # Pre-restructure workspaces shipped the wiki unconditionally, so a
+        # migrated workspace was a wiki user — keep it enabled.
+        from dataclasses import replace
+
+        from duct.config import load_config, save_config
+
+        cfg = load_config(root)
+        save_config(replace(cfg, wiki=replace(cfg.wiki, enabled=True)), root)
+        materialise_root_claude(root, wiki_enabled=True)
         # Rewrite every ticket's CLAUDE.md so @../toolkit/... imports resolve.
         from duct.sync.claude_md import ClaudeMdSync
 
-        ClaudeMdSync().sync(root)
+        ClaudeMdSync(wiki_enabled=True).sync(root)
     return moves
 
 

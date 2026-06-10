@@ -64,6 +64,10 @@ class TestApply:
         # generated root .claude/ shim + subagent copies
         assert "@../toolkit/wiki/INDEX.md" in paths.root_claude_md(root).read_text()
         assert (paths.root_claude_agents_dir(root) / "wiki-reader.md").exists()
+        # a migrated workspace was a wiki user — the opt-in flag is set
+        from duct.config import load_config
+
+        assert load_config(root).wiki.enabled is True
         # old loose files are gone
         assert not (root / "config.yaml").exists()
         assert not (root / ".runs").exists()

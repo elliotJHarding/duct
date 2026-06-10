@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import click
 
-from duct.cli.output import debug, error, output, spinner, success, update_spinner, warn
+from duct.cli.output import error, output, spinner, success, update_spinner, warn
 from duct.cli.resolve import resolve_root
+from duct.cli.setup_core import build_sync_sources, sync_intervals
 from duct.config import (
     AuthError,
     ConfigError,
@@ -15,54 +16,6 @@ from duct.config import (
     load_config,
 )
 from duct.sync.base import SyncCoordinator
-
-
-def _build_all_sources(cfg) -> tuple[list, list[tuple[str, str]]]:
-    """Build all available sync sources, skipping those with missing auth."""
-    sources = []
-    skipped: list[tuple[str, str]] = []
-
-    # Jira
-    try:
-        from duct.sync.jira import JiraSync
-
-        debug(f"jira: JQL = {cfg.jira_jql}")
-        sources.append(JiraSync(
-            domain=cfg.jira_domain,
-            email=jira_email(),
-            token=jira_token(),
-            jql=cfg.jira_jql,
-            sandbox=cfg.sandbox,
-        ))
-    except AuthError as exc:
-        skipped.append(("jira", str(exc)))
-
-    # GitHub
-    try:
-        from duct.config import github_username
-        from duct.sync.github import GitHubSync
-
-        sources.append(GitHubSync(token=gh_token(), github_username=github_username()))
-    except AuthError as exc:
-        skipped.append(("github", str(exc)))
-
-    # CI (no auth required)
-    from duct.sync.ci import CISync
-    sources.append(CISync())
-
-    # Sessions (no auth required)
-    from duct.sync.sessions import SessionSync
-    sources.append(SessionSync())
-
-    # Workspace (no auth required)
-    from duct.sync.workspace_sync import WorkspaceSync
-    sources.append(WorkspaceSync())
-
-    # Per-ticket CLAUDE.md (must run last; depends on the artifacts other sources produce)
-    from duct.sync.claude_md import ClaudeMdSync
-    sources.append(ClaudeMdSync())
-
-    return sources, skipped
 
 
 def _refresh_repo_completion_cache(root, cfg) -> None:
@@ -112,16 +65,8 @@ def sync(ctx: click.Context, force: bool) -> None:
         ctx.exit(1)
         return
 
-    intervals = {
-        "jira": cfg.sync_intervals.jira,
-        "github": cfg.sync_intervals.github,
-        "sessions": cfg.sync_intervals.sessions,
-        "workspace": cfg.sync_intervals.workspace,
-        "ci": cfg.sync_intervals.ci,
-        "claude_md": cfg.sync_intervals.claude_md,
-    }
-    coordinator = SyncCoordinator(root, intervals)
-    sources, skipped = _build_all_sources(cfg)
+    coordinator = SyncCoordinator(root, sync_intervals(cfg))
+    sources, skipped = build_sync_sources(cfg)
     for name, reason in skipped:
         warn(f"{name}: skipped ({reason})")
 
@@ -258,7 +203,7 @@ def sync_claude_md(ctx: click.Context) -> None:
     from duct.sync.claude_md import ClaudeMdSync
 
     def factory(_cfg):
-        return ClaudeMdSync()
+        return ClaudeMdSync(wiki_enabled=_cfg.wiki.enabled)
 
     _run_single_source(ctx, factory)
 
@@ -275,15 +220,7 @@ def sync_status(ctx: click.Context) -> None:
         ctx.exit(1)
         return
 
-    intervals = {
-        "jira": cfg.sync_intervals.jira,
-        "github": cfg.sync_intervals.github,
-        "sessions": cfg.sync_intervals.sessions,
-        "workspace": cfg.sync_intervals.workspace,
-        "ci": cfg.sync_intervals.ci,
-        "claude_md": cfg.sync_intervals.claude_md,
-    }
-    coordinator = SyncCoordinator(root, intervals)
+    coordinator = SyncCoordinator(root, sync_intervals(cfg))
     statuses = coordinator.all_source_statuses()
 
     from duct.cli.output import Col, table

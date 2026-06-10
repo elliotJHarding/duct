@@ -35,13 +35,36 @@ class TestFreshWrite:
         assert MANAGED_BLOCK_START in content
         assert MANAGED_BLOCK_END in content
         assert "@orchestrator/TICKET.md" in content
-        assert "@../toolkit/wiki/INDEX.md" in content
         assert "# duct ticket workspace" in content
         assert "Sync-managed context" in content
         assert "@../toolkit/WORKFLOW.md" in content
         assert "preserved across syncs" in content
         assert result.tickets_synced == 1
         assert result.errors == []
+
+    def test_omits_wiki_wiring_by_default(self, tmp_path: Path):
+        """The wiki is opt-in — no wiki import, section, or mention without it."""
+        ticket = _make_ticket(tmp_path, "ERSC-9-task")
+
+        ClaudeMdSync().sync(tmp_path)
+
+        content = _read_claude_md(ticket)
+        assert "@../toolkit/wiki/INDEX.md" not in content
+        assert "## Wiki" not in content
+        assert "toolkit/wiki" not in content
+
+
+class TestWikiEnabled:
+    def test_includes_wiki_import_section_and_branch_hint(self, tmp_path: Path):
+        ticket = _make_ticket(tmp_path, "ERSC-10-task")
+
+        ClaudeMdSync(wiki_enabled=True).sync(tmp_path)
+
+        content = _read_claude_md(ticket)
+        assert "@../toolkit/wiki/INDEX.md" in content
+        assert "## Wiki" in content
+        assert "wiki-reader" in content
+        assert "consult `../toolkit/wiki/` for client-specific" in content
 
     def test_omits_optional_sections_when_empty(self, tmp_path: Path):
         _make_ticket(tmp_path, "ERSC-2-task")

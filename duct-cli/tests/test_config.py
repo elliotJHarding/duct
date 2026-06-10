@@ -127,6 +127,23 @@ def test_save_config_omits_trust(tmp_workspace: Path) -> None:
     assert "trust" not in raw
 
 
+def test_wiki_defaults_disabled_when_absent(tmp_workspace: Path) -> None:
+    _write_config(tmp_workspace, "workspace:\n  root: " + str(tmp_workspace) + "\n")
+    cfg = load_config(tmp_workspace)
+
+    assert cfg.wiki.enabled is False
+
+
+def test_wiki_round_trip(tmp_workspace: Path) -> None:
+    from duct.config import WikiConfig
+
+    original = WorkspaceConfig(root=tmp_workspace, wiki=WikiConfig(enabled=True))
+    save_config(original, tmp_workspace)
+    loaded = load_config(tmp_workspace)
+
+    assert loaded.wiki.enabled is True
+
+
 def test_notifications_defaults_when_absent(tmp_workspace: Path) -> None:
     _write_config(tmp_workspace, "workspace:\n  root: " + str(tmp_workspace) + "\n")
     cfg = load_config(tmp_workspace)

@@ -137,6 +137,13 @@ class DisplayConfig:
 
 
 @dataclass(frozen=True)
+class WikiConfig:
+    """Workspace wiki (toolkit/wiki/) — strictly opt-in."""
+
+    enabled: bool = False
+
+
+@dataclass(frozen=True)
 class NotificationsConfig:
     """macOS notification preferences, consumed by the duct daemon."""
 
@@ -202,6 +209,7 @@ class WorkspaceConfig:
     status: StatusConfig = field(default_factory=StatusConfig)
     session_status: SessionStatusConfig = field(default_factory=SessionStatusConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
+    wiki: WikiConfig = field(default_factory=WikiConfig)
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     activity: ActivityConfig = field(default_factory=ActivityConfig)
     auto_orchestrate: AutoOrchestrateConfig = field(default_factory=AutoOrchestrateConfig)
@@ -348,6 +356,17 @@ def _display_to_dict(display: DisplayConfig) -> dict[str, Any]:
         _DISPLAY_PY_TO_YAML[f.name]: getattr(display, f.name)
         for f in fields(display)
     }
+
+
+def _parse_wiki(raw: dict[str, Any]) -> WikiConfig:
+    kwargs: dict[str, Any] = {}
+    if "enabled" in raw:
+        kwargs["enabled"] = bool(raw["enabled"])
+    return WikiConfig(**kwargs)
+
+
+def _wiki_to_dict(wiki: WikiConfig) -> dict[str, Any]:
+    return {"enabled": wiki.enabled}
 
 
 def _parse_notifications(raw: dict[str, Any]) -> NotificationsConfig:
@@ -518,6 +537,7 @@ def load_config(root: Path) -> WorkspaceConfig:
     status = _parse_status(raw.get("status", {}))
     session_status = _parse_session_status(raw.get("sessionStatus", {}))
     display = _parse_display(raw.get("display", {}))
+    wiki = _parse_wiki(raw.get("wiki", {}))
     notifications = _parse_notifications(raw.get("notifications", {}))
     activity = _parse_activity(raw.get("activity", {}))
     auto_orchestrate = _parse_auto_orchestrate(raw.get("autoOrchestrate", {}))
@@ -535,6 +555,7 @@ def load_config(root: Path) -> WorkspaceConfig:
         status=status,
         session_status=session_status,
         display=display,
+        wiki=wiki,
         notifications=notifications,
         activity=activity,
         auto_orchestrate=auto_orchestrate,
@@ -563,6 +584,7 @@ def save_config(config: WorkspaceConfig, root: Path) -> None:
         "status": _status_to_dict(config.status),
         "sessionStatus": _session_status_to_dict(config.session_status),
         "display": _display_to_dict(config.display),
+        "wiki": _wiki_to_dict(config.wiki),
         "notifications": _notifications_to_dict(config.notifications),
         "activity": _activity_to_dict(config.activity),
         "autoOrchestrate": _auto_orchestrate_to_dict(config.auto_orchestrate),

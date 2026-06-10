@@ -1,0 +1,165 @@
+Screen {
+    background: $background;
+}
+
+#wizard-body {
+    height: 1fr;
+}
+
+#rail-pane {
+    dock: left;
+    width: 30;
+    background: $surface;
+    border-right: solid $panel;
+    padding: 1 2;
+}
+
+#rail-brand {
+    color: $primary;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#phase-pane {
+    width: 1fr;
+    padding: 1 4;
+}
+
+Phase {
+    height: auto;
+}
+
+.phase-title {
+    text-style: bold;
+    color: $primary;
+    margin-bottom: 1;
+}
+
+.phase-explain {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+.phase-status {
+    margin: 1 0;
+}
+
+.phase-error {
+    color: $error;
+    margin: 1 0;
+}
+
+.live-panel {
+    background: $surface;
+    border: round $panel;
+    padding: 1 2;
+    margin: 1 0;
+    height: auto;
+}
+
+.field-label {
+    margin-top: 1;
+    color: $text-muted;
+}
+
+.path-candidates {
+    color: $text-muted;
+}
+
+#workspace-tree {
+    height: 12;
+    border: round $panel;
+    background: $surface;
+    margin-bottom: 1;
+}
+
+.nav-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+.nav-buttons Button {
+    margin-right: 2;
+}
+
+/* The JQL phase fills the pane so the ticket preview can use every spare
+   row — judging a JQL needs the full result list, not a sample. */
+JqlPhase {
+    height: 100%;
+}
+
+#jql-preview {
+    height: 1fr;
+    min-height: 8;
+    margin: 1 0;
+}
+
+/* Sync chapter: source table on the left, the workspace tree filling in
+   live on the right. */
+SyncPhase {
+    height: 100%;
+}
+
+#sync-body {
+    height: 1fr;
+}
+
+#sync-left {
+    width: 64;
+    height: 100%;
+}
+
+#sync-table {
+    height: auto;
+    max-height: 12;
+    margin: 1 0;
+}
+
+#sync-tree-panel {
+    width: 1fr;
+    height: 100%;
+    margin-left: 2;
+    padding: 0 1;
+    background: $surface;
+    border: round $panel;
+}
+
+#commands-grid {
+    layout: grid;
+    grid-size: 2;
+    grid-gutter: 1 2;
+    height: auto;
+    margin: 1 0;
+}
+
+.command-panel {
+    height: auto;
+    padding: 1 2;
+    background: $surface;
+    border: round $panel;
+    border-title-color: $secondary;
+    border-title-style: bold;
+}
+
+.experimental-badge {
+    color: $warning;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+SelectionList {
+    height: auto;
+    max-height: 12;
+    border: round $panel;
+    margin: 1 0;
+}
+
+OptionList {
+    height: auto;
+    max-height: 24;
+    border: round $panel;
+}
+
+Markdown {
+    margin: 0;
+}

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import yaml
@@ -40,6 +40,10 @@ class GlobalState:
     """Pointers into the user's duct setup."""
 
     workspace_path: Path | None = None
+    # Whether the user has been through (or skipped past) the setup wizard's
+    # workflow tutorial. Tracked separately from config readiness so a
+    # finished setup with an unseen tutorial still offers the tour.
+    tutorial_completed: bool = False
 
 
 def load_state() -> GlobalState:
@@ -53,23 +57,30 @@ def load_state() -> GlobalState:
     workspace = raw.get("workspace_path")
     return GlobalState(
         workspace_path=Path(workspace).expanduser() if workspace else None,
+        tutorial_completed=bool(raw.get("tutorial_completed", False)),
     )
 
 
 def save_state(state: GlobalState) -> None:
     path = state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
-    data: dict[str, str] = {}
+    data: dict[str, object] = {}
     if state.workspace_path is not None:
         data["workspace_path"] = str(state.workspace_path)
+    if state.tutorial_completed:
+        data["tutorial_completed"] = True
     path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")
 
 
 def set_workspace_path(path: Path) -> None:
-    """Persist *path* as the active workspace location."""
+    """Persist *path* as the active workspace location, keeping other fields."""
     current = load_state()
-    save_state(GlobalState(workspace_path=path.expanduser().resolve()))
-    _ = current  # currently no other fields, but keeps the merge intent explicit
+    save_state(replace(current, workspace_path=path.expanduser().resolve()))
+
+
+def mark_tutorial_completed() -> None:
+    """Record that the user finished (or deliberately skipped) the tutorial."""
+    save_state(replace(load_state(), tutorial_completed=True))
 
 
 # ---------------------------------------------------------------------------

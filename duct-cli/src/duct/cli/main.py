@@ -74,14 +74,9 @@ def _migrate_credentials_once() -> None:
 
 def _state_is_ready() -> bool:
     """True when duct has a workspace and the Jira credentials it needs."""
-    from duct import paths
-    from duct.credentials import resolve_jira_email, resolve_jira_token
-    from duct.global_state import load_state
+    from duct.cli.setup_core import state_is_ready
 
-    state = load_state()
-    if not state.workspace_path or not paths.is_workspace(state.workspace_path):
-        return False
-    return bool(resolve_jira_email() and resolve_jira_token())
+    return state_is_ready()
 
 
 def _print_bare_status(ctx: click.Context) -> None:

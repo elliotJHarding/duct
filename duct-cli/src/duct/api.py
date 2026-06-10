@@ -1121,7 +1121,9 @@ def trigger_sync(root: Path, force: bool = False) -> list[SyncResult]:
     ))
     # claude_md must run last: it stitches together the artifacts the other
     # sources write into each ticket's CLAUDE.md.
-    _build("claude_md", lambda: _import("duct.sync.claude_md", "ClaudeMdSync")())
+    _build("claude_md", lambda: _import("duct.sync.claude_md", "ClaudeMdSync")(
+        wiki_enabled=cfg.wiki.enabled,
+    ))
 
     return coordinator.run(sources, force=force)
 

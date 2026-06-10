@@ -52,18 +52,12 @@ def orchestrate(ctx: click.Context, ticket_key: str | None, dry_run: bool, pre_s
 
     # Optional pre-flight sync
     if pre_sync:
-        from duct.cli.sync_cmd import _build_all_sources, _report_result
+        from duct.cli.setup_core import build_sync_sources, sync_intervals
+        from duct.cli.sync_cmd import _report_result
         from duct.sync.base import SyncCoordinator
 
-        intervals = {
-            "jira": cfg.sync_intervals.jira,
-            "github": cfg.sync_intervals.github,
-            "sessions": cfg.sync_intervals.sessions,
-            "workspace": cfg.sync_intervals.workspace,
-            "ci": cfg.sync_intervals.ci,
-        }
-        coordinator = SyncCoordinator(root, intervals)
-        sources, skipped = _build_all_sources(cfg)
+        coordinator = SyncCoordinator(root, sync_intervals(cfg))
+        sources, _skipped = build_sync_sources(cfg)
 
         with spinner("Pre-flight sync..."):
             results = coordinator.run(sources, force=False)
@@ -82,7 +76,9 @@ def orchestrate(ctx: click.Context, ticket_key: str | None, dry_run: bool, pre_s
         return
 
     allowed_tools = ALLOWED_TOOLS
-    prompt = build_prompt(ticket_key, cfg.orchestrator.fork_model)
+    prompt = build_prompt(
+        ticket_key, cfg.orchestrator.fork_model, wiki_enabled=cfg.wiki.enabled,
+    )
 
     cmd = [
         claude_bin,

@@ -121,13 +121,21 @@ def resolve_gh_token() -> str:
     Returns an empty string when none of those produce a value. Callers that
     require a token (e.g. ``duct.config.gh_token``) raise ``AuthError``.
     """
+    return resolve_gh_token_with_source()[0]
+
+
+def resolve_gh_token_with_source() -> tuple[str, str]:
+    """Like :func:`resolve_gh_token`, plus a human label for where the token
+    was found: "keychain", "environment", or "gh CLI". ``("", "")`` when
+    nothing resolves.
+    """
     stored = _get(_GH_TOKEN)
     if stored:
-        return stored
+        return stored, "keychain"
 
     env = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if env:
-        return env
+        return env, "environment"
 
     import shutil
     import subprocess
@@ -139,11 +147,11 @@ def resolve_gh_token() -> str:
                 capture_output=True, text=True, timeout=5,
             )
             if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
+                return result.stdout.strip(), "gh CLI"
         except Exception:
             pass
 
-    return ""
+    return "", ""
 
 
 # ---------------------------------------------------------------------------

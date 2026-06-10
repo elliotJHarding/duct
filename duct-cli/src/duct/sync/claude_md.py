@@ -40,6 +40,9 @@ _SEED_TAIL = (
 class ClaudeMdSync:
     name = "claude_md"
 
+    def __init__(self, wiki_enabled: bool = False) -> None:
+        self.wiki_enabled = wiki_enabled
+
     def sync(self, root: Path) -> SyncResult:
         start = time.time()
         errors: list[str] = []
@@ -69,7 +72,7 @@ class ClaudeMdSync:
         orch = ticket_dir / "orchestrator"
         working_notes = self._working_notes(orch)
         repos = [p.name for p in find_repo_dirs(ticket_dir)]
-        managed = _render_managed(working_notes, repos)
+        managed = _render_managed(working_notes, repos, self.wiki_enabled)
         update_managed_block(ticket_dir / "CLAUDE.md", managed, seed_tail=_SEED_TAIL)
 
     @staticmethod
@@ -85,12 +88,14 @@ class ClaudeMdSync:
         )
 
 
-def _render_managed(working_notes: list[str], repos: list[str]) -> str:
+def _render_managed(
+    working_notes: list[str], repos: list[str], wiki_enabled: bool,
+) -> str:
     """Render the managed block content (including start/end markers)."""
     lines: list[str] = [
         MANAGED_BLOCK_START,
         "@orchestrator/TICKET.md",
-        "@../toolkit/wiki/INDEX.md",
+        *(["@../toolkit/wiki/INDEX.md"] if wiki_enabled else []),
         "",
         "# duct ticket workspace",
         "",
@@ -120,8 +125,9 @@ def _render_managed(working_notes: list[str], repos: list[str]) -> str:
         lines.extend(f"- `{name}/`" for name in repos)
         lines.append("")
 
-    lines += _code_and_repos_section()
-    lines += _wiki_section()
+    lines += _code_and_repos_section(wiki_enabled)
+    if wiki_enabled:
+        lines += _wiki_section()
     lines += [
         "@../toolkit/WORKFLOW.md",
         MANAGED_BLOCK_END,
@@ -129,8 +135,20 @@ def _render_managed(working_notes: list[str], repos: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _code_and_repos_section() -> list[str]:
+def _code_and_repos_section(wiki_enabled: bool) -> list[str]:
     """Lines for the Code & repos section embedded in every managed block."""
+    convention_lines = (
+        [
+            "    2. Translate the fixVersion to a branch name using the team's",
+            "       naming convention — consult `../toolkit/wiki/` for client-specific",
+            "       conventions (commonly `release/X.Y` or similar).",
+        ]
+        if wiki_enabled
+        else [
+            "    2. Translate the fixVersion to a branch name using the team's",
+            "       naming convention (commonly `release/X.Y` or similar).",
+        ]
+    )
     return [
         "## Code & repos",
         "",
@@ -146,9 +164,7 @@ def _code_and_repos_section() -> list[str]:
         "  default as integration/trunk. Derive the branch in this order:",
         "    1. Read `fixVersion(s)` on this ticket in `orchestrator/TICKET.md`",
         "       (fall back to `EPIC.md` if the ticket itself has none).",
-        "    2. Translate the fixVersion to a branch name using the team's",
-        "       naming convention — consult `../toolkit/wiki/` for client-specific",
-        "       conventions (commonly `release/X.Y` or similar).",
+        *convention_lines,
         "    3. Cross-check `orchestrator/WORKSPACE.md`: sibling repos already",
         "       added to this ticket record the branch they were forked from,",
         "       and a ticket usually keeps branches aligned across its repos.",

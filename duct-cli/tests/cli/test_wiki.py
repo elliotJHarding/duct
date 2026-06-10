@@ -124,11 +124,21 @@ class TestWikiReview:
 
 
 class TestInitSeedsWiki:
-    """Cross-cutting test: `duct init` should seed the wiki and subagents."""
+    """Cross-cutting tests: the wiki is opt-in, seeded only when enabled."""
 
-    def test_init_creates_wiki_index_and_subagents(self, tmp_path: Path) -> None:
+    def test_init_does_not_seed_wiki_by_default(self, tmp_path: Path) -> None:
         result = CliRunner().invoke(cli, ["--workspace-root", str(tmp_path), "init"])
         assert result.exit_code == 0, result.output
+
+        assert not paths.wiki_index(tmp_path).exists()
+        for name in ("wiki-reader", "wiki-contributor", "wiki-maintainer"):
+            assert not (tmp_path / ".claude" / "agents" / f"{name}.md").exists()
+
+    def test_enabling_wiki_seeds_index_and_subagents(self, tmp_path: Path) -> None:
+        from duct.cli.setup_core import set_wiki
+
+        CliRunner().invoke(cli, ["--workspace-root", str(tmp_path), "init"])
+        set_wiki(tmp_path, True)
 
         index = paths.wiki_index(tmp_path)
         assert index.exists()

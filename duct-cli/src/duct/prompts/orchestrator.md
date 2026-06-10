@@ -266,23 +266,7 @@ Reusable session prompts live in `toolkit/agents/`. Before writing a session-lau
 
 As you scan ticket directories, also watch for **newly-synced tickets** — a `TICKET.md` present but no repo worktrees yet. If WORKFLOW.md authorises autonomous workspace setup, that is an autonomous trigger (see "Autonomous task execution"): run the setup agent now rather than proposing it. Otherwise propose it as usual.
 
-## Maintaining the workspace wiki
-
-The `toolkit/wiki/` folder is a curated knowledge base shared across all sessions. It captures lessons, conventions, durable domain knowledge, and environment quirks. Entries are curated by three Claude Code subagents (`wiki-reader`, `wiki-contributor`, `wiki-maintainer`) that sessions invoke implicitly via the per-ticket `CLAUDE.md` instruction — you do not edit `toolkit/wiki/` directly.
-
-Keep WORKFLOW.md and `toolkit/wiki/` distinct:
-
-- **WORKFLOW.md** — *how we work.* Heuristics, artifact standards, ticket-type conventions, ordering rules. Process rules.
-- **toolkit/wiki/** — *what we have learned.* Lessons from corrections, project conventions, domain facts, environment quirks. Anything a future agent would want to know before starting a task.
-
-On each run:
-
-- Glance at `toolkit/wiki/INDEX.md` — it lists every entry by name, type, and description. A scan is enough; do not deep-read every entry.
-- When you observe a durable lesson surface during ticket evaluation that isn't yet in the wiki, write a `prompt` action that calls the `wiki-contributor` subagent for the relevant session. Do not edit `toolkit/wiki/` files yourself.
-- Propose `wiki-maintainer` when the wiki is large (>50 entries) or when `INDEX.md` exceeds 200 lines, or when no maintainer action has been proposed in the last ~7 days. Use a `prompt` action with `agent: wiki-maintainer` so the user can approve a maintenance pass.
-
-Do not capture ticket-specific notes in the wiki — those belong in the ticket's `orchestrator/RESEARCH.md`.
-
+$wiki_section
 ## Reviewing existing actions
 
 This audit is part of the discovery phase, performed by the parent before fanning out. Per-ticket `ORCHESTRATOR.md` notes are rewritten from fork outputs in the synthesis phase (see "Synthesis"); the pending/resolved-action audit on `actions.yaml` files stays in the parent so it knows what's already in flight before forking.
@@ -356,7 +340,7 @@ Unlike session-launch actions, approving a Jira comment executes it directly (no
 Capture friction in how this workspace is run, or business/workflow context you've learned that isn't written down. The intent is broad. Examples:
 
 - **Reducing friction.** A repeated manual step that should be automated; a sync source that's missing a useful field; a recurring command pattern that warrants a CLI subcommand or a script under `scripts/`; a flaky check that wastes review time.
-- **Capturing workflow rules.** A team convention or process heuristic picked up while reading tickets — e.g. "tickets touching component X always need a migration plan", "this team treats CI orange as actionable, not just red". Belongs in WORKFLOW.md. Factual domain or business context goes to `research/` instead (see "Maintaining the research/ wiki" above).
+- **Capturing workflow rules.** A team convention or process heuristic picked up while reading tickets — e.g. "tickets touching component X always need a migration plan", "this team treats CI orange as actionable, not just red". Belongs in WORKFLOW.md.$wiki_research_note
 - **Tightening workflow guidance.** Heuristics in WORKFLOW.md that misfire; concerns that keep recurring without being listed; quality standards that don't match the artifacts actually being produced.
 - **Closing config drift.** Agents under `toolkit/agents/` that WORKFLOW.md's Agents section doesn't reference (or that it references but no longer exist); gaps between what the workspace contains and what its guidance describes.
 

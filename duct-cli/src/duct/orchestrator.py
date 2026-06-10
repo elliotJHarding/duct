@@ -19,14 +19,33 @@ from duct.prompts import load_prompt
 ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Agent"]
 
 
-def build_prompt(ticket_key: str | None = None, fork_model: str = "sonnet") -> str:
+def build_prompt(
+    ticket_key: str | None = None,
+    fork_model: str = "sonnet",
+    wiki_enabled: bool = False,
+) -> str:
     """Build the -p prompt for the orchestrator session.
 
     ``fork_model`` is the model alias the prompt tells the read-only per-ticket
     fan-out forks to spawn with; the parent keeps its inherited (Opus) model.
+    ``wiki_enabled`` controls whether the wiki-maintenance section (and the
+    pointer directing learned domain context to the wiki) appear at all.
     """
     ticket_focus = f"\nFocus this session on ticket {ticket_key}." if ticket_key else ""
-    return load_prompt("orchestrator", ticket_focus=ticket_focus, fork_model=fork_model)
+    wiki_section = load_prompt("orchestrator_wiki_section") if wiki_enabled else ""
+    wiki_research_note = (
+        ' Factual domain or business context goes to the workspace wiki instead'
+        ' (see "Maintaining the workspace wiki" above).'
+        if wiki_enabled
+        else ""
+    )
+    return load_prompt(
+        "orchestrator",
+        ticket_focus=ticket_focus,
+        fork_model=fork_model,
+        wiki_section=wiki_section,
+        wiki_research_note=wiki_research_note,
+    )
 
 
 _TOOL_STYLE = "grey50"
@@ -149,7 +168,9 @@ def launch(
 
         write_settings(root, cfg.sandbox)
 
-    prompt = build_prompt(ticket_key, cfg.orchestrator.fork_model)
+    prompt = build_prompt(
+        ticket_key, cfg.orchestrator.fork_model, wiki_enabled=cfg.wiki.enabled,
+    )
 
     cmd = [
         claude_bin,

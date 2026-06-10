@@ -31,6 +31,12 @@ This is a duct workspace. See `toolkit/WORKFLOW.md` for development lifecycle gu
 - Each ticket has a directory named {KEY}-{slug}/ at the workspace root
 - Ticket artifacts live in the orchestrator/ subdirectory
 - Files with `source: sync` frontmatter are overwritten by sync — do not edit them
+"""
+
+# Wiki guidance lives in the *generated* root .claude/CLAUDE.md (rewritten by
+# materialise_root_claude on every setup/doctor) rather than the user-owned
+# toolkit/CLAUDE.md, so toggling wiki.enabled never edits a user file.
+_ROOT_WIKI_GUIDANCE = """\
 
 ## Wiki
 
@@ -143,29 +149,58 @@ def ensure_toolkit_repo(root: Path) -> bool:
     return True
 
 
-def materialise_root_claude(root: Path) -> None:
+def materialise_root_claude(root: Path, *, wiki_enabled: bool | None = None) -> None:
     """Regenerate ``{root}/.claude/`` from the tracked ``toolkit/``.
 
     Claude Code discovers ``CLAUDE.md`` and ``.claude/agents/`` from the
     session launch cwd (the workspace root and ticket-dir ancestors), but the
     canonical copies live in ``toolkit/`` which is not on that path. So we
     materialise generated copies here: a ``CLAUDE.md`` that ``@``-imports the
-    toolkit orientation + wiki index, and copies of the wiki subagents.
-    Idempotent — safe to re-run on every setup/doctor.
+    toolkit orientation (plus the wiki index and wiki guidance when the wiki
+    is enabled), and copies of the subagents. Idempotent — safe to re-run on
+    every setup/doctor, and the single place wiki wiring is toggled.
     """
+    if wiki_enabled is None:
+        wiki_enabled = load_config(root).wiki.enabled
+
     claude_md = paths.root_claude_md(root)
     claude_md.parent.mkdir(parents=True, exist_ok=True)
     tk = paths.TOOLKIT_DIRNAME
-    claude_md.write_text(
-        f"@../{tk}/{paths.CLAUDE_MD_FILENAME}\n"
-        f"@../{tk}/{paths.WIKI_DIRNAME}/{paths.WIKI_INDEX_FILENAME}\n",
-        encoding="utf-8",
-    )
+    content = f"@../{tk}/{paths.CLAUDE_MD_FILENAME}\n"
+    if wiki_enabled:
+        content += (
+            f"@../{tk}/{paths.WIKI_DIRNAME}/{paths.WIKI_INDEX_FILENAME}\n"
+            f"{_ROOT_WIKI_GUIDANCE}"
+        )
+    claude_md.write_text(content, encoding="utf-8")
 
     agents_dst = paths.root_claude_agents_dir(root)
     agents_dst.mkdir(parents=True, exist_ok=True)
+    wiki_agent_names = {f"{name}.md" for name in _WIKI_SUBAGENTS}
     for src in sorted(paths.subagents_dir(root).glob("*.md")):
+        if not wiki_enabled and src.name in wiki_agent_names:
+            continue
         shutil.copyfile(src, agents_dst / src.name)
+    if not wiki_enabled:
+        for name in wiki_agent_names:
+            (agents_dst / name).unlink(missing_ok=True)
+
+
+def ensure_wiki_scaffolding(root: Path) -> list[str]:
+    """Create any missing wiki files (index + subagents) in ``toolkit/``.
+
+    Returns workspace-root-relative paths of files created. Existing files —
+    including a populated wiki index — are never touched, so re-enabling the
+    wiki after a spell disabled restores scaffolding without losing entries.
+    """
+    created: list[str] = []
+    for name in _WIKI_SUBAGENTS:
+        body = load_template(f"claude_agents/{name}.md")
+        if _create_if_missing(paths.subagents_dir(root) / f"{name}.md", body):
+            created.append(f"toolkit/subagents/{name}.md")
+    if _create_if_missing(paths.wiki_index(root), _WIKI_INDEX_TEMPLATE):
+        created.append("toolkit/wiki/INDEX.md")
+    return created
 
 
 def bootstrap_workspace(root: Path) -> tuple[list[str], list[str]]:
@@ -187,6 +222,7 @@ def bootstrap_workspace(root: Path) -> tuple[list[str], list[str]]:
         created.append("toolkit/config.yaml")
     else:
         existed.append("toolkit/config.yaml")
+    cfg = load_config(root)
 
     if _create_if_missing(paths.workflow_md(root), load_template("WORKFLOW.md")):
         created.append("toolkit/WORKFLOW.md")
@@ -198,25 +234,16 @@ def bootstrap_workspace(root: Path) -> tuple[list[str], list[str]]:
     else:
         existed.append("toolkit/CLAUDE.md")
 
-    for name in _WIKI_SUBAGENTS:
-        body = load_template(f"claude_agents/{name}.md")
-        rel = f"toolkit/subagents/{name}.md"
-        if _create_if_missing(paths.subagents_dir(root) / f"{name}.md", body):
-            created.append(rel)
-        else:
-            existed.append(rel)
-
-    if _create_if_missing(paths.wiki_index(root), _WIKI_INDEX_TEMPLATE):
-        created.append("toolkit/wiki/INDEX.md")
-    else:
-        existed.append("toolkit/wiki/INDEX.md")
+    # Wiki scaffolding only exists when the wiki is enabled (opt-in via setup).
+    if cfg.wiki.enabled:
+        created.extend(ensure_wiki_scaffolding(root))
 
     # Tracked toolkit becomes its own git repo (idempotent, best-effort).
     ensure_toolkit_repo(root)
 
     # Generated root .claude/ materialised from toolkit (CLAUDE.md + subagents)
     # so Claude Code's cwd-based discovery still finds them.
-    materialise_root_claude(root)
+    materialise_root_claude(root, wiki_enabled=cfg.wiki.enabled)
     created.append(".claude/CLAUDE.md")
 
     # .claude/settings.json (sandbox config — always written/refreshed)
@@ -229,7 +256,6 @@ def bootstrap_workspace(root: Path) -> tuple[list[str], list[str]]:
         from duct.cli.resolve import write_repo_completion_cache
         from duct.cli.workspace_cmd import discover_repos
 
-        cfg = load_config(root) if config_path.exists() else WorkspaceConfig(root=root)
         names = [name for name, _ in discover_repos(cfg)]
         if names:
             write_repo_completion_cache(root, names)

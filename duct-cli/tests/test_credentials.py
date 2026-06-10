@@ -10,6 +10,7 @@ from duct.credentials import (
     load_credentials,
     migrate_legacy_credentials,
     resolve_gh_token,
+    resolve_gh_token_with_source,
     resolve_jira_email,
     resolve_jira_token,
     save_credentials,
@@ -44,9 +45,11 @@ def test_gh_falls_back_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """GitHub keeps the portable GH_TOKEN/GITHUB_TOKEN env convention."""
     monkeypatch.setenv("GH_TOKEN", "env-gh")
     assert resolve_gh_token() == "env-gh"
+    assert resolve_gh_token_with_source() == ("env-gh", "environment")
     # Keychain wins over env when present.
     save_credentials(Credentials(gh_token="kc-gh"))
     assert resolve_gh_token() == "kc-gh"
+    assert resolve_gh_token_with_source() == ("kc-gh", "keychain")
 
 
 def test_migrate_from_env(monkeypatch: pytest.MonkeyPatch) -> None:

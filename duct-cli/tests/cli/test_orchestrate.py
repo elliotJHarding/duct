@@ -137,6 +137,19 @@ class TestPromptContent:
         assert "$fork_model" not in prompt
         assert "model: 'sonnet'" in prompt
 
+    def test_prompt_omits_wiki_section_by_default(self) -> None:
+        prompt = build_prompt(None)
+        assert "Maintaining the workspace wiki" not in prompt
+        assert "toolkit/wiki" not in prompt
+        assert "$wiki_section" not in prompt
+        assert "$wiki_research_note" not in prompt
+
+    def test_prompt_includes_wiki_section_when_enabled(self) -> None:
+        prompt = build_prompt(None, wiki_enabled=True)
+        assert "Maintaining the workspace wiki" in prompt
+        assert "wiki-contributor" in prompt
+        assert "goes to the workspace wiki instead" in prompt
+
     def test_prompt_uses_custom_fork_model(self) -> None:
         prompt = build_prompt(None, fork_model="haiku")
         assert "model: 'haiku'" in prompt

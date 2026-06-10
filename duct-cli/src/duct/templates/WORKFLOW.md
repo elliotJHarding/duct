@@ -263,6 +263,8 @@ The filesystem is the source of truth. List `toolkit/agents/*.md` to discover wh
 
 ## Workspace wiki
 
+The wiki is opt-in: this section applies only when `wiki.enabled` is true in `toolkit/config.yaml` (toggle it via `duct setup`).
+
 The `toolkit/wiki/` folder is a curated knowledge base shared across all sessions. It captures four kinds of entry: **lessons** (mistakes corrected during sessions), **conventions** (project patterns surfaced during work), **domain knowledge** (what fields mean, why a workflow exists), and **environment quirks** (build, sandbox, tooling gotchas). It is the durable counterpart to per-ticket `orchestrator/RESEARCH.md` and replaces the older `research/` folder concept.
 
 The wiki is curated by three Claude Code subagents shipped with duct: `wiki-reader`, `wiki-contributor`, `wiki-maintainer`. Sessions invoke them implicitly via the per-ticket and workspace-root `CLAUDE.md` instructions — there are no hooks. Direct invocation (`Task` tool, `subagent_type: "wiki-reader"`) is the supported entry point.
