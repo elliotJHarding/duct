@@ -31,6 +31,10 @@ _PR_FIELDS = """
         updatedAt
         mergedAt
         headRefName
+        baseRefName
+        additions
+        deletions
+        changedFiles
         repository { nameWithOwner }
         author { login ... on User { avatarUrl } }
         reviews(last: 10) {
@@ -359,6 +363,10 @@ class GitHubSync:
             created_at=node.get("createdAt", ""),
             updated_at=node.get("updatedAt", ""),
             branch=node.get("headRefName", ""),
+            base_branch=node.get("baseRefName", ""),
+            additions=node.get("additions") or 0,
+            deletions=node.get("deletions") or 0,
+            changed_files=node.get("changedFiles") or 0,
             reviewers=reviewers,
             comments=comments,
             requested_reviewers=requested_reviewers,
@@ -418,6 +426,8 @@ class GitHubSync:
             parts.append(f"- **Repo**: {pr.repo}")
             if pr.branch:
                 parts.append(f"- **Branch**: {pr.branch}")
+            if pr.base_branch:
+                parts.append(f"- **Base Branch**: {pr.base_branch}")
             parts.append(f"- **State**: {pr.state}")
             parts.append(f"- **Author**: @{pr.author}")
             if pr.author_avatar_url:
@@ -425,6 +435,10 @@ class GitHubSync:
             parts.append(f"- **Review**: {pr.review_status}")
             parts.append(f"- **CI**: {pr.ci_status}")
             parts.append(f"- **Mergeable**: {pr.mergeable}")
+            if pr.additions or pr.deletions or pr.changed_files:
+                parts.append(f"- **Additions**: {pr.additions}")
+                parts.append(f"- **Deletions**: {pr.deletions}")
+                parts.append(f"- **Changed Files**: {pr.changed_files}")
             parts.append(f"- **Created**: {pr.created_at}")
             parts.append(f"- **Updated**: {pr.updated_at}")
             if pr.requested_reviewers:

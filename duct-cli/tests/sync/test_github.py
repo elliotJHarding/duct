@@ -127,6 +127,27 @@ class TestParsePrNode:
         node = graphql_response["data"]["search"]["nodes"][0]
         assert gh._parse_pr_node(node).mergeable == "MERGEABLE"
 
+    def test_base_branch_and_diffstat_parsed(
+        self, gh: GitHubSync, graphql_response: dict,
+    ):
+        node = graphql_response["data"]["search"]["nodes"][0]
+        pr = gh._parse_pr_node(node)
+        assert pr.base_branch == "main"
+        assert pr.additions == 412
+        assert pr.deletions == 36
+        assert pr.changed_files == 12
+
+    def test_base_branch_and_diffstat_default_when_missing(
+        self, gh: GitHubSync, graphql_response: dict,
+    ):
+        # The second fixture node predates these query fields.
+        node = graphql_response["data"]["search"]["nodes"][1]
+        pr = gh._parse_pr_node(node)
+        assert pr.base_branch == ""
+        assert pr.additions == 0
+        assert pr.deletions == 0
+        assert pr.changed_files == 0
+
     def test_mergeable_defaults_to_unknown_when_missing(self, gh: GitHubSync):
         node = {
             "number": 1, "title": "t", "state": "OPEN", "isDraft": False,
@@ -334,6 +355,10 @@ class TestWritePullRequestsMd:
                 created_at="2026-03-10T10:00:00Z",
                 updated_at="2026-03-15T14:30:00Z",
                 branch="feature/ERSC-1278-fix-auth",
+                base_branch="main",
+                additions=412,
+                deletions=36,
+                changed_files=12,
                 reviewers=[Reviewer(login="bob", state="APPROVED")],
                 comments=[
                     PRComment(
@@ -364,6 +389,10 @@ class TestWritePullRequestsMd:
         # Metadata
         assert "- **Repo**: acme/backend" in content
         assert "- **Branch**: feature/ERSC-1278-fix-auth" in content
+        assert "- **Base Branch**: main" in content
+        assert "- **Additions**: 412" in content
+        assert "- **Deletions**: 36" in content
+        assert "- **Changed Files**: 12" in content
         assert "- **State**: open" in content
         assert "- **Author**: @alice" in content
         assert "- **Review**: APPROVED" in content
@@ -424,6 +453,33 @@ class TestWritePullRequestsMd:
 
         assert "### Reviewers" not in content
         assert "### Outstanding Comments" not in content
+
+    def test_zero_diffstat_and_empty_base_omitted(
+        self, gh: GitHubSync, tmp_path: Path,
+    ):
+        ticket_dir = tmp_path / "ERSC-100-task"
+        ticket_dir.mkdir()
+        (ticket_dir / "orchestrator").mkdir()
+
+        prs = [
+            PullRequest(
+                number=1, title="Simple fix", repo="acme/backend",
+                state="open", author="alice", is_draft=False,
+                review_status="pending", ci_status="unknown",
+                url="https://github.com/acme/backend/pull/1",
+                created_at="2026-03-14T12:00:00Z",
+                updated_at="2026-03-14T12:00:00Z",
+                branch="fix/ERSC-100",
+            ),
+        ]
+
+        gh._write_pull_requests_md(prs, ticket_dir)
+        content = (ticket_dir / "orchestrator" / "PULL_REQUESTS.md").read_text()
+
+        assert "- **Base Branch**:" not in content
+        assert "- **Additions**:" not in content
+        assert "- **Deletions**:" not in content
+        assert "- **Changed Files**:" not in content
 
     def test_mergeable_and_requested_reviewers_roundtrip(
         self, gh: GitHubSync, tmp_path: Path,

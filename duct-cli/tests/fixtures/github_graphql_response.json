@@ -17,6 +17,10 @@
           "updatedAt": "2026-03-15T14:30:00Z",
           "mergedAt": null,
           "headRefName": "feature/ERSC-1278-fix-auth",
+          "baseRefName": "main",
+          "additions": 412,
+          "deletions": 36,
+          "changedFiles": 12,
           "repository": {
             "nameWithOwner": "acme/backend"
           },

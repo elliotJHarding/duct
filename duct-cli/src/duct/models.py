@@ -76,6 +76,12 @@ class PullRequest:
     created_at: str  # ISO 8601
     updated_at: str  # ISO 8601
     branch: str = ""
+    # Branch the PR merges into (baseRefName). Empty on older cached payloads.
+    base_branch: str = ""
+    # Diffstat. Zero on older cached payloads that predate these fields.
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
     reviewers: list[Reviewer] = field(default_factory=list)
     comments: list[PRComment] = field(default_factory=list)
     # Reviewers requested but who haven't posted a review yet. Distinct from

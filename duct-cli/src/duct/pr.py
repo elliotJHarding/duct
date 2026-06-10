@@ -126,6 +126,10 @@ def parse_pull_requests_md(content: str) -> list[PullRequest]:
             title=raw_title,
             repo=fields.get("repo", ""),
             branch=fields.get("branch", ""),
+            base_branch=fields.get("base branch", ""),
+            additions=_parse_int(fields.get("additions", "")),
+            deletions=_parse_int(fields.get("deletions", "")),
+            changed_files=_parse_int(fields.get("changed files", "")),
             state=fields.get("state", "open"),
             author=author,
             is_draft=is_draft,
@@ -144,6 +148,14 @@ def parse_pull_requests_md(content: str) -> list[PullRequest]:
         ))
 
     return prs
+
+
+def _parse_int(raw: str) -> int:
+    """Parse a numeric field value, returning 0 when absent or malformed."""
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return 0
 
 
 def _parse_at_list(raw: str) -> list[str]:

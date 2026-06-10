@@ -196,6 +196,10 @@ class TestParsePullRequestsMd:
         assert prs[0].requested_teams == []
         assert prs[0].needs_my_review is False
         assert prs[0].branch == ""
+        assert prs[0].base_branch == ""
+        assert prs[0].additions == 0
+        assert prs[0].deletions == 0
+        assert prs[0].changed_files == 0
 
     def test_branch_field_parses(self) -> None:
         content = MINIMAL_PR_MD.replace(
@@ -204,6 +208,28 @@ class TestParsePullRequestsMd:
         )
         prs = parse_pull_requests_md(content)
         assert prs[0].branch == "feature-x"
+
+    def test_base_branch_and_diffstat_parse(self) -> None:
+        content = MINIMAL_PR_MD.replace(
+            "- **Repo**: org/backend\n",
+            "- **Repo**: org/backend\n"
+            "- **Base Branch**: main\n"
+            "- **Additions**: 412\n"
+            "- **Deletions**: 36\n"
+            "- **Changed Files**: 12\n",
+        )
+        pr = parse_pull_requests_md(content)[0]
+        assert pr.base_branch == "main"
+        assert pr.additions == 412
+        assert pr.deletions == 36
+        assert pr.changed_files == 12
+
+    def test_malformed_diffstat_falls_back_to_zero(self) -> None:
+        content = MINIMAL_PR_MD.replace(
+            "- **Repo**: org/backend\n",
+            "- **Repo**: org/backend\n- **Additions**: lots\n",
+        )
+        assert parse_pull_requests_md(content)[0].additions == 0
 
 
 class TestDeriveStatusLabel:
