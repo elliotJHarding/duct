@@ -48,7 +48,7 @@ _STATUS_CATEGORIES: dict[str, str] = {
     "RESOLVED": "Done",
 }
 
-_DEFAULT_CATEGORY = "Pre-Development"
+_DEFAULT_CATEGORY = "Other"
 
 
 

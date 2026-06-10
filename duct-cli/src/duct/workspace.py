@@ -351,6 +351,17 @@ def create_worktree(
         )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+    else:
+        # Record what we forked from so the TUI can later show only this
+        # branch's commits (git log <base>..HEAD). --no-track means there is
+        # no upstream to recover this from afterwards.
+        subprocess.run(
+            ["git", "config", f"branch.{feature_branch}.duct-base", source_ref],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
     if sandbox is not None and sandbox.enabled:
         from duct.sandbox import write_settings

@@ -94,8 +94,8 @@ class TestStatusCategory:
     def test_ready_to_deploy(self):
         assert _status_category("Ready to Deploy") == "Awaiting Action"
 
-    def test_unknown_defaults_to_pre_development(self):
-        assert _status_category("Some Unknown Status") == "Pre-Development"
+    def test_unknown_defaults_to_other(self):
+        assert _status_category("Some Unknown Status") == "Other"
 
     def test_case_insensitive(self):
         assert _status_category("in progress") == "Active Development"

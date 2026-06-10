@@ -125,6 +125,7 @@ __all__ = [
     "github_username",
     "get_terminal_adapter",
     "get_ticket_detail",
+    "get_ticket_index",
     "get_ticket_overviews",
     "get_tickets",
     "load_initial",
@@ -555,10 +556,11 @@ def get_ticket_overviews(
         "Awaiting Action": 1,
         "In Test": 1,
         "Pre-Development": 2,
+        "Other": 3,
     }
     overviews.sort(key=lambda t: (
         not t.assigned_to_me,
-        _phase_order.get(t.category, 2),
+        _phase_order.get(t.category, 3),
         _status_group_rank(t.status, cfg),
         -(
             len(t.sessions)
@@ -570,6 +572,174 @@ def get_ticket_overviews(
     ))
 
     return overviews
+
+
+def get_ticket_index(root: Path, filter_mode: str = "all") -> list[TicketOverview]:
+    """Fast, metadata-only ticket list — no git, sessions, PRs, actions or tasks.
+
+    Reads each ticket's ``TICKET.md`` frontmatter table only, so it returns in
+    file-read time even on large workspaces. Used by the Ctrl+K switcher, which
+    needs just key/summary/status/category/assigned_to_me. Returned objects are
+    ``TicketOverview`` instances with the enriched collections left empty.
+    """
+    from duct.markdown import extract_table, parse_frontmatter
+    from duct.sync.jira import read_identity_cache
+    from duct.workspace import enumerate_ticket_dirs
+
+    cfg = load_config(root)
+    my_account_id = read_identity_cache(root)
+    _phase_order = {
+        "Active Development": 0,
+        "Awaiting Action": 1,
+        "In Test": 1,
+        "Pre-Development": 2,
+        "Other": 3,
+    }
+
+    entries: list[TicketOverview] = []
+    for key, path in enumerate_ticket_dirs(root):
+        ticket_md = path / "orchestrator" / "TICKET.md"
+        summary = key
+        status = ""
+        category = ""
+        assignee = ""
+        assignee_account_id = ""
+        if ticket_md.exists():
+            text = ticket_md.read_text()
+            try:
+                _meta, body = parse_frontmatter(text)
+                for row in extract_table(body):
+                    field_name = row.get("Field", "")
+                    value = row.get("Value", "")
+                    if field_name == "Summary":
+                        summary = value
+                    elif field_name == "Status":
+                        status = value
+                    elif field_name == "Category":
+                        category = value
+                    elif field_name == "Assignee":
+                        assignee = value
+                    elif field_name == "Assignee ID":
+                        assignee_account_id = value
+            except Exception:
+                pass
+            try:
+                for line in text.splitlines():
+                    if line.startswith("# ") and ":" in line:
+                        summary = line.split(":", 1)[1].strip()
+                        break
+            except Exception:
+                pass
+
+        status_lower = status.lower()
+        if filter_mode == "focus":
+            if status_lower not in cfg.status.focus_statuses:
+                continue
+        elif filter_mode == "all":
+            if status_lower in cfg.status.terminal_statuses:
+                continue
+
+        assigned_to_me = (
+            not my_account_id
+            or not assignee_account_id
+            or assignee_account_id == my_account_id
+        )
+        entries.append(TicketOverview(
+            key=key,
+            summary=summary,
+            status=status,
+            category=category,
+            priority="",
+            path=path,
+            artifacts=[],
+            assignee=assignee,
+            assignee_account_id=assignee_account_id,
+            assigned_to_me=assigned_to_me,
+        ))
+
+    entries.sort(key=lambda t: (
+        not t.assigned_to_me,
+        _phase_order.get(t.category, 3),
+        t.key,
+    ))
+    return entries
+
+
+def _git_out(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=str(repo),
+        capture_output=True, text=True, timeout=5,
+    ).stdout.strip()
+
+
+def _base_candidates(repo: Path, branch: str) -> list[str]:
+    """Plausible fork-point refs for ``branch``, best-known first.
+
+    No single source is reliable across worktrees (measured): the persisted
+    base is authoritative but only set on newer worktrees; ``@{upstream}`` is
+    often unset (``--no-track``) or points at the branch's own pushed copy; the
+    reflog fork point can be a stale ref the branch has long since moved past.
+    We collect whatever resolves and let the caller pick the tightest.
+    """
+    candidates: list[str] = []
+
+    persisted = _git_out(repo, "config", f"branch.{branch}.duct-base")
+    if persisted:
+        candidates.append(persisted)
+
+    upstream = _git_out(repo, "rev-parse", "--abbrev-ref", "@{upstream}")
+    # Skip the branch's own remote copy (origin/<branch>) — useless as a base.
+    if upstream and "@{" not in upstream and upstream.split("/", 1)[-1] != branch:
+        candidates.append(upstream)
+
+    for line in _git_out(repo, "reflog", "show", branch).splitlines():
+        marker = "branch: Created from "
+        if marker in line:
+            candidates.append(line.split(marker, 1)[1].strip())
+            break
+
+    seen: set[str] = set()
+    return [
+        c for c in candidates
+        if c and c != "HEAD" and not (c in seen or seen.add(c))
+    ]
+
+
+def _branch_commits(repo: Path, branch: str) -> list[str]:
+    """Oneline commits made on ``branch`` itself (``<base>..HEAD``).
+
+    Picks the base that yields the fewest commits among the resolvable
+    candidates — the tightest fork point, which best isolates this branch's own
+    work from inherited release history. Falls back to the five most recent
+    commits when no fork point resolves.
+    """
+    def _last_commits() -> list[str]:
+        out = _git_out(repo, "log", "--oneline", "-5")
+        return [l.strip() for l in out.splitlines() if l.strip()]
+
+    if not branch:
+        return _last_commits()
+
+    best_base: str | None = None
+    best_count = -1
+    for base in _base_candidates(repo, branch):
+        result = subprocess.run(
+            ["git", "rev-list", "--count", f"{base}..HEAD"],
+            cwd=str(repo), capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            continue
+        try:
+            count = int(result.stdout.strip())
+        except ValueError:
+            continue
+        if best_base is None or count < best_count:
+            best_base, best_count = base, count
+
+    if best_base is None:
+        return _last_commits()
+    out = _git_out(repo, "log", "--oneline", "--max-count=99", f"{best_base}..HEAD")
+    return [l.strip() for l in out.splitlines() if l.strip()]
 
 
 def get_ticket_detail(root: Path, key: str) -> TicketDetail | None:
@@ -642,11 +812,7 @@ def get_ticket_detail(root: Path, key: str) -> TicketDetail | None:
             except Exception:
                 pass
             try:
-                result = subprocess.run(
-                    ["git", "log", "--oneline", "-5"],
-                    cwd=str(child), capture_output=True, text=True, timeout=5,
-                )
-                recent_commits = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+                recent_commits = _branch_commits(child, branch)
             except Exception:
                 pass
             repos.append(RepoStatus(
