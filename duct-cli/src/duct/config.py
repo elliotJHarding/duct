@@ -10,7 +10,7 @@ from typing import Any
 from duct import paths
 from duct.exceptions import AuthError, ConfigError
 
-_DEFAULT_JQL = "assignee = currentUser() AND status != Done ORDER BY updated DESC"
+_DEFAULT_JQL = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
 
 
 @dataclass(frozen=True)

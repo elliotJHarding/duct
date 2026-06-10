@@ -309,6 +309,27 @@ class TestArchiveTicket:
     def test_returns_none_when_missing(self, tmp_workspace: Path):
         assert archive_ticket(tmp_workspace, "ERSC-999") is None
 
+    def test_preserves_existing_archived_copy(self, tmp_workspace: Path):
+        # An archived copy already exists (e.g. the ticket was archived before,
+        # then a stray active folder reappeared). Archiving again must not nest
+        # inside or clobber the existing copy.
+        archived = tmp_workspace / ".archive" / "ERSC-700-task"
+        (archived / "orchestrator").mkdir(parents=True)
+        (archived / "orchestrator" / "TICKET.md").write_text("original")
+
+        stray = tmp_workspace / "ERSC-700-task"
+        (stray / "orchestrator").mkdir(parents=True)
+
+        result = archive_ticket(tmp_workspace, "ERSC-700")
+
+        assert result is not None
+        assert not stray.exists()
+        # Existing archived copy is untouched, and the new one lands beside it.
+        assert (archived / "orchestrator" / "TICKET.md").read_text() == "original"
+        assert result != archived
+        assert result.parent.name == ".archive"
+        assert result.exists()
+
 
 class TestRestoreTicket:
     def test_restores_to_root(self, tmp_workspace: Path):

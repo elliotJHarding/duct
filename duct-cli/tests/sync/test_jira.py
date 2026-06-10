@@ -583,6 +583,52 @@ class TestFullSync:
         archive_dir = tmp_workspace / ".archive" / "STALE-1-old-ticket"
         assert archive_dir.exists()
 
+    def test_sync_archives_terminal_tickets_returned_by_query(
+        self, jira: JiraSync, httpx_mock, tmp_workspace: Path,
+    ):
+        # A ticket that reached a terminal status but is still returned by the
+        # query (e.g. a name-based "status != Done" filter that lets Closed
+        # through) must be archived, not re-synced. It already exists on disk
+        # from when it was open.
+        existing = tmp_workspace / "PROJ-900-closed-ticket"
+        (existing / "orchestrator").mkdir(parents=True)
+
+        closed_issue = {
+            "key": "PROJ-900",
+            "id": "10900",
+            "fields": {
+                "summary": "Closed ticket",
+                "status": {"name": "Closed"},
+                "priority": {"name": "Low"},
+                "issuetype": {"name": "Bug"},
+                "assignee": None,
+                "project": {"key": "PROJ"},
+                "parent": None,
+                "customfield_10014": None,
+                "customfield_10020": None,
+                "fixVersions": [],
+                "components": [],
+                "labels": [],
+                "description": None,
+                "comment": {"comments": []},
+            },
+        }
+        httpx_mock.add_response(
+            json={"startAt": 0, "maxResults": 50, "total": 1, "issues": [closed_issue]},
+        )
+        httpx_mock.add_response(
+            url="https://jira.example.com/rest/api/3/myself",
+            json={"accountId": "user-abc"},
+        )
+
+        result = jira.sync(tmp_workspace)
+
+        # Archived directly from the main loop: no TICKET.md written, no
+        # transitions fetched (the only consumed responses are search + myself).
+        assert result.tickets_synced == 0
+        assert not existing.exists()
+        assert (tmp_workspace / ".archive" / "PROJ-900-closed-ticket").exists()
+
     def test_sync_keeps_stale_tickets_in_non_terminal_status(
         self, jira: JiraSync, httpx_mock, tmp_workspace: Path,
     ):

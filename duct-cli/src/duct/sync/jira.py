@@ -155,6 +155,16 @@ class JiraSync:
                 errors.append(f"{key}: failed to extract ticket - {exc}")
                 continue
 
+            # Archive any ticket that reached a terminal status, even when the
+            # configured JQL still returns it (e.g. a name-based "status != Done"
+            # filter that lets Closed/Resolved through). Keeps the archive
+            # decision consistent with _status_category regardless of the query.
+            # key stays in current_keys (it *was* returned by the query) so the
+            # stale branch below doesn't re-process the now-archived ticket.
+            if ticket.category == "Done":
+                archive_ticket(root, key)
+                continue
+
             try:
                 transitions = self._fetch_transitions(key)
                 ticket = Ticket(

@@ -240,6 +240,14 @@ def archive_ticket(root: Path, key: str) -> Path | None:
     archive = root / ".archive"
     archive.mkdir(exist_ok=True)
     dest = archive / src.name
+    # shutil.move into an existing directory nests the source inside it, which
+    # would bury an already-archived copy. De-duplicate the destination name so
+    # the existing archive is preserved untouched.
+    if dest.exists():
+        suffix = 1
+        while (candidate := archive / f"{src.name}.{suffix}").exists():
+            suffix += 1
+        dest = candidate
     shutil.move(str(src), str(dest))
     return dest
 
