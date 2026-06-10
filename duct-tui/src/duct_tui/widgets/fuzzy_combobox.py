@@ -86,12 +86,17 @@ class FuzzyCombobox(Widget):
         margin: 0;
     }
     FuzzyCombobox > OptionList {
-        max-height: 10;
+        display: none;
         height: auto;
-        border: none;
+        max-height: 12;
+        border: round $panel;
+        background: $surface;
         padding: 0;
     }
-    FuzzyCombobox.-empty > OptionList {
+    FuzzyCombobox.-open > OptionList {
+        display: block;
+    }
+    FuzzyCombobox.-open.-empty > OptionList {
         display: none;
     }
     """
@@ -177,6 +182,20 @@ class FuzzyCombobox(Widget):
 
     def on_mount(self) -> None:
         self._apply_filter("")
+
+    # The dropdown behaves like a real combobox: open only while the user is
+    # in the widget. CSS ``:focus-within`` can't drive this (Textual only
+    # re-applies focus styles for rules targeting the focused widget's
+    # ancestors), so track it with an ``-open`` class instead.
+
+    def on_descendant_focus(self, event: events.DescendantFocus) -> None:
+        self._sync_open()
+
+    def on_descendant_blur(self, event: events.DescendantBlur) -> None:
+        self._sync_open()
+
+    def _sync_open(self) -> None:
+        self.set_class(self.has_focus_within, "-open")
 
     def _apply_filter(self, query: str) -> None:
         scored: list[tuple[int, int, ComboOption, list[int]]] = []

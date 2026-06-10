@@ -10,16 +10,18 @@ CATEGORY_TO_PHASE: dict[str, str] = {
     "Awaiting Action": "post",
     "In Test": "post",
     "Pre-Development": "pre",
+    "Other": "other",
 }
 
-DEFAULT_PHASE = "pre"
+DEFAULT_PHASE = "other"
 
-PHASE_SORT_ORDER: dict[str, int] = {"active": 0, "post": 1, "pre": 2}
+PHASE_SORT_ORDER: dict[str, int] = {"active": 0, "post": 1, "pre": 2, "other": 3}
 
 PHASE_COLORS: dict[str, str] = {
     "active": "#7aa2f7",
     "post": "#e0af68",
     "pre": "#9ece6a",
+    "other": "#737aa2",
 }
 
 
@@ -39,4 +41,5 @@ def get_phase_icon(icons: Icons, phase: str) -> str:
         "active": icons.phase_active,
         "post": icons.phase_post,
         "pre": icons.phase_pre,
-    }.get(phase, icons.phase_pre)
+        "other": icons.phase_other,
+    }.get(phase, icons.phase_other)

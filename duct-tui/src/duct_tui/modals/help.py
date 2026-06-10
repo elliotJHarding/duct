@@ -20,8 +20,8 @@ HELP_TEXT = """\
 [bold]Tabs[/bold]
   \]       Next tab
   \[       Previous tab
-  1-9     Jump to tab by position
-  w       Close tab
+  1-5     Jump to tab by position
+  w       Clear ticket tab
 
 [bold]Actions[/bold]
   y       Approve action
@@ -36,6 +36,7 @@ HELP_TEXT = """\
   c       Launch root session + dock
 
 [bold]Global[/bold]
+  Ctrl+K  Find / open a ticket
   a       Next attention item
   s       Sync
   S       Force sync

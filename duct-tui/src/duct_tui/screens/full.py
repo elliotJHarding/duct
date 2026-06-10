@@ -7,7 +7,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.containers import Horizontal
-from textual.widgets import Footer, Header, Tabs, TabbedContent, TabPane
+from textual.widgets import Footer, Header, Static, Tabs, TabbedContent, TabPane
 
 from duct_tui.widgets.orchestrator_tab import OrchestratorTab
 from duct_tui.widgets.pr_tab import PRListPanel, PRTab
@@ -25,8 +25,8 @@ class FullScreen(Screen):
         Binding("shift+tab", "prev_tab", "Prev tab", priority=True),
         Binding("right_square_bracket", "next_tab", "]", key_display="]", show=False),
         Binding("left_square_bracket", "prev_tab", "[", key_display="[", show=False),
-        Binding("w", "close_tab", "Close tab"),
-        *[Binding(str(n), f"focus_tab({n})", f"Tab {n}", show=False) for n in range(1, 10)],
+        Binding("w", "close_tab", "Clear ticket"),
+        *[Binding(str(n), f"focus_tab({n})", f"Tab {n}", show=False) for n in range(1, 6)],
     ]
 
     def compose(self) -> ComposeResult:
@@ -43,6 +43,11 @@ class FullScreen(Screen):
                     yield SessionPanel()
                 with TabPane("Conduct", id="orchestrator-tab"):
                     yield OrchestratorTab()
+                with TabPane("Ticket", id="ticket-detail"):
+                    yield Static(
+                        "No ticket selected — press Ctrl+K to find one",
+                        id="ticket-placeholder",
+                    )
             yield SessionPreview(id="session-preview")
         yield Footer()
 
@@ -64,7 +69,6 @@ class FullScreen(Screen):
                 card_list = self.query_one(TicketCardList)
                 if hasattr(app, 'ticket_overviews'):
                     card_list.update_tickets(app.ticket_overviews)
-                    self._reconcile_ticket_tabs(app.ticket_overviews)
             except Exception:
                 pass
             try:
@@ -100,39 +104,7 @@ class FullScreen(Screen):
             pass
 
     def on_ticket_card_list_ticket_selected(self, event: TicketCardList.TicketSelected) -> None:
-        self._open_ticket_tab(event.ticket_key)
-
-    def _reconcile_ticket_tabs(self, overviews) -> None:
-        try:
-            filter_mode = self.query_one(TicketFilterBar).mode
-        except Exception:
-            return
-        if filter_mode != "focus":
-            return
-        tabs = self.query_one(TabbedContent)
-        category_map = {o.key: o.category for o in overviews}
-        mine_map = {o.key: bool(getattr(o, "assigned_to_me", True)) for o in overviews}
-        # Desired (key, assigned_to_me) pairs in the same order as the
-        # phase-sorted overview list — captures both ordering changes and
-        # bare reassignments so the rebuild fires when mine-state flips.
-        desired_state = [(o.key, mine_map[o.key]) for o in overviews]
-        existing_ticket_panes = [
-            p for p in tabs.query(TabPane)
-            if p.id and p.id.startswith("ticket-")
-        ]
-        current_state = [
-            (p.id.removeprefix("ticket-"), "not-mine" not in p.classes)
-            for p in existing_ticket_panes
-        ]
-
-        if current_state == desired_state:
-            return
-
-        # Remove all ticket tabs, then re-add in the correct order
-        for pane in existing_ticket_panes:
-            tabs.remove_pane(pane.id)
-        for key, assigned_to_me in desired_state:
-            self._ensure_ticket_tab(key, category_map.get(key, ""), assigned_to_me)
+        self._open_ticket(event.ticket_key)
 
     def _category_for_key(self, key: str) -> str:
         for o in getattr(self.app, "ticket_overviews", []):
@@ -146,41 +118,34 @@ class FullScreen(Screen):
                 return bool(getattr(o, "assigned_to_me", True))
         return True
 
-    def _ensure_ticket_tab(self, key: str, category: str = "", assigned_to_me: bool | None = None) -> None:
+    def _open_ticket(self, key: str) -> None:
+        """Render a ticket's detail in the single persistent "Ticket" tab.
+
+        Swaps the pane's content for a fresh ``TicketTab`` and tints the tab
+        label with the ticket's phase colour, mirroring how the overview card
+        border is coloured. Focus is deferred until after the mount lands.
+        """
         from duct_tui.phases import PHASE_COLORS, get_phase_icon, phase_for_category
         from duct_tui.widgets.ticket_tab import TicketTab
 
         tabs = self.query_one(TabbedContent)
-        tab_id = f"ticket-{key}"
-        for pane in tabs.query(TabPane):
-            if pane.id == tab_id:
-                return
+        pane = tabs.get_pane("ticket-detail")
+        for child in list(pane.children):
+            child.remove()
+        pane.mount(TicketTab(key))
 
-        if not category:
-            category = self._category_for_key(key)
-        if assigned_to_me is None:
-            assigned_to_me = self._assigned_to_me_for_key(key)
+        category = self._category_for_key(key)
+        assigned_to_me = self._assigned_to_me_for_key(key)
         phase = phase_for_category(category)
         color = PHASE_COLORS.get(phase, "")
         icon = get_phase_icon(self.app.icons, phase) if hasattr(self.app, "icons") else ""
-        # For tickets assigned to other people, drop the phase tinting and
-        # wrap the whole label in `dim` so the tab recedes the same way the
-        # overview card border does.
         if not assigned_to_me:
             label = f"[dim]{icon} {key}[/dim]" if icon else f"[dim]{key}[/dim]"
         else:
             label = f"[{color}]{icon}[/{color}] {key}" if color else key
+        tabs.get_tab("ticket-detail").label = label
 
-        pane = TabPane(label, id=tab_id)
-        if not assigned_to_me:
-            pane.add_class("not-mine")
-        pane.compose_add_child(TicketTab(key))
-        tabs.add_pane(pane)
-
-    def _open_ticket_tab(self, key: str) -> None:
-        self._ensure_ticket_tab(key)
-        tabs = self.query_one(TabbedContent)
-        self._switch_to_pane(tabs.query_one(f"#ticket-{key}", TabPane))
+        self.call_after_refresh(self._switch_to_pane, pane)
 
     def _switch_to_pane(self, pane: TabPane) -> None:
         tabs = self.query_one(TabbedContent)
@@ -216,10 +181,21 @@ class FullScreen(Screen):
             self._switch_to_pane(panes[index - 1])
 
     def action_close_tab(self) -> None:
+        """Clear the Ticket tab back to its placeholder (only when it's active)."""
         tabs = self.query_one(TabbedContent)
-        if tabs.active in ("overview", "prs-tab", "sessions-tab", "orchestrator-tab"):
+        if tabs.active != "ticket-detail":
             return
-        tabs.remove_pane(tabs.active)
+        pane = tabs.get_pane("ticket-detail")
+        for child in list(pane.children):
+            child.remove()
+        pane.mount(
+            Static(
+                "No ticket selected — press Ctrl+K to find one",
+                id="ticket-placeholder",
+            )
+        )
+        tabs.get_tab("ticket-detail").label = "Ticket"
+        self._switch_to_pane(tabs.get_pane("overview"))
 
     def on_pr_list_panel_pr_opened(self, event: PRListPanel.PROpened) -> None:
         import webbrowser
@@ -232,9 +208,9 @@ class FullScreen(Screen):
         from duct.config import load_config
 
         key = event.ticket_key
-        # If the ticket exists in the workspace, open its tab as usual.
+        # If the ticket exists in the workspace, open it in the Ticket tab.
         if resolve_ticket_dir(self.app.data.root, key) is not None:
-            self._open_ticket_tab(key)
+            self._open_ticket(key)
             return
         # Orphan review PR — open the Jira ticket in the browser instead.
         cfg = load_config(self.app.data.root)

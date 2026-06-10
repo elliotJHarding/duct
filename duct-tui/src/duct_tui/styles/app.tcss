@@ -106,26 +106,37 @@ WorkspacePanel {
 WorkspacePanel #repo-list {
     height: 1fr;
     min-height: 3;
+    padding: 0 1;
+}
+
+WorkspacePanel #repo-cards {
+    height: auto;
+    width: 1fr;
 }
 
 WorkspacePanel #add-repo-form {
     height: auto;
     border-top: solid $panel;
-    padding: 0 1;
+    padding: 1 1;
 }
 
 WorkspacePanel #add-repo-heading {
     text-style: bold;
     color: $accent;
+    margin-bottom: 1;
+}
+
+WorkspacePanel .field-label {
+    color: $text-muted;
     margin-top: 1;
 }
 
 WorkspacePanel #add-repo-form FuzzyCombobox {
-    margin-top: 1;
+    margin-top: 0;
 }
 
 WorkspacePanel #add-repo-form > Input {
-    margin-top: 1;
+    margin-top: 0;
 }
 
 WorkspacePanel #add-btn {
@@ -151,6 +162,52 @@ WorkspacePanel #add-repo-status {
 #confirm-buttons Button {
     margin: 0 2;
 }
+
+/* --- Ctrl+K ticket switcher --- */
+#switcher {
+    width: 100%;
+    height: 100%;
+    padding: 1 2;
+    background: $surface;
+}
+
+#switcher-search {
+    margin: 0 0 1 0;
+}
+
+#switcher-columns {
+    height: 1fr;
+}
+
+.switcher-col {
+    width: 1fr;
+    height: 1fr;
+    margin: 0 1 0 0;
+    padding: 0 1;
+    border: round $panel;
+}
+
+.switcher-col-title {
+    height: 1;            /* keep a blank heading row so columns stay aligned */
+    text-style: bold;
+    text-align: center;
+    margin: 0 0 1 0;
+}
+
+.switcher-rows {
+    height: 1fr;
+}
+
+.switcher-col-active { border: round $phase-active; }
+.switcher-col-active .switcher-col-title { color: $phase-active; }
+.switcher-col-post { border: round $phase-post; }
+.switcher-col-post .switcher-col-title { color: $phase-post; }
+.switcher-col-pre { border: round $phase-pre; }
+.switcher-col-pre .switcher-col-title { color: $phase-pre; }
+.switcher-col-other { border: round $phase-other; }
+.switcher-col-other .switcher-col-title { color: $phase-other; }
+.switcher-col-na { border: round $panel; }
+.switcher-col-na .switcher-col-title { color: $text-muted; }
 
 #help-content {
     padding: 2 4;

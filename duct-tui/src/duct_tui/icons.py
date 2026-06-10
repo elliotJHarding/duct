@@ -41,8 +41,9 @@ class Icons:
     ci_fail: str = "\u2717"          # ✗
 
     # Review
-    review_approved: str = "\u2713"  # ✓
-    review_changes: str = "\u2717"   # ✗
+    review_approved: str = "\u2713"   # ✓
+    review_changes: str = "\u2717"    # ✗
+    review_commented: str = "\u25cf"  # ●
 
     # Attention
     warning: str = "\u26a0"          # ⚠
@@ -66,6 +67,7 @@ class Icons:
     phase_active: str = "\u25b6"     # ▶
     phase_post: str = "\u25a0"       # ■
     phase_pre: str = "\u25cb"        # ○
+    phase_other: str = "\u25c7"      # ◇ (unrecognised status)
 
     # Sync sources (rendered in the top bar)
     source_jira: str = "J"
@@ -99,6 +101,7 @@ NERD = Icons(
     ci_fail="\uf00d",                # nf-fa-times
     review_approved="\uf00c",        # nf-fa-check
     review_changes="\uf00d",         # nf-fa-times
+    review_commented="\uf075",       # nf-fa-comment
     warning="\uf071",                # nf-fa-warning
     action_pending="\uf111",         # nf-fa-circle (solid)
     action_approved="\uf00c",        # nf-fa-check
@@ -112,6 +115,7 @@ NERD = Icons(
     phase_active="\uf04b",           # nf-fa-play
     phase_post="\uf04d",             # nf-fa-stop
     phase_pre="\uf10c",              # nf-fa-circle_o
+    phase_other="\uf059",            # nf-fa-question_circle
     source_jira="\uf188",            # nf-fa-bug (Jira has no BMP glyph)
     source_github="\uf09b",          # nf-fa-github
     source_workspace="\uf07b",       # nf-fa-folder

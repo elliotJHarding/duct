@@ -6,38 +6,34 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Button, Input, Label, OptionList, Static
-from textual.widgets.option_list import Option
+from textual.widgets import Button, Input, Label, Static
 
 from duct.cli.workspace_cmd import RepoCandidate
 from duct.models import RepoStatus
+from duct_tui.icons import UNICODE
 from duct_tui.widgets.fuzzy_combobox import ComboOption, FuzzyCombobox
-from duct_tui.widgets.vim_mixin import VimListMixin
+from duct_tui.widgets.workspace_render import render_repo_columns
 
 
-class _RepoList(VimListMixin, OptionList):
-    """The repo list (separated so the inline composer can sit alongside it)."""
+class _RepoGrid(VerticalScroll):
+    """Repo cards flowed into responsive columns, scrollable and focusable."""
+
+    can_focus = True
 
     BINDINGS = [
-        Binding("j", "cursor_down", "Down", show=False),
-        Binding("k", "cursor_up", "Up", show=False),
+        Binding("j", "scroll_down", "Down", show=False),
+        Binding("k", "scroll_up", "Up", show=False),
         Binding("r", "focus_form", "Add repo", show=False),
-        *VimListMixin.VIM_BINDINGS,
     ]
 
-    def _vim_goto_first(self) -> None:
-        if self.option_count:
-            self.highlighted = 0
-
-    def _vim_goto_last(self) -> None:
-        if self.option_count:
-            self.highlighted = self.option_count - 1
+    def compose(self) -> ComposeResult:
+        yield Static(id="repo-cards")
 
     def update_repos(self, repos: list[RepoStatus]) -> None:
-        self.clear_options()
+        cards = self.query_one("#repo-cards", Static)
         if not repos:
             hint = Text()
             hint.append("No repos yet", style="dim italic")
@@ -45,20 +41,10 @@ class _RepoList(VimListMixin, OptionList):
             hint.append("Press ", style="dim")
             hint.append("r", style="bold")
             hint.append(" to add one below", style="dim")
-            self.add_option(Option(hint, id="__empty__", disabled=True))
+            cards.update(hint)
             return
-        for r in repos:
-            dirty_indicator = "△" if r.dirty else "✓"
-            dirty_text = (
-                f"dirty ({r.uncommitted_changes} changes)" if r.dirty else "clean"
-            )
-            label = (
-                f"{r.name}\n"
-                f"  {r.branch}  {dirty_indicator} {dirty_text}"
-            )
-            if r.recent_commits:
-                label += f"  {len(r.recent_commits)} commits"
-            self.add_option(Option(label, id=r.name))
+        icons = getattr(self.app, "icons", UNICODE)
+        cards.update(render_repo_columns(repos, icons))
 
     def action_focus_form(self) -> None:
         self.post_message(WorkspacePanel.FocusAddRepoForm())
@@ -97,18 +83,21 @@ class WorkspacePanel(Widget):
         self.border_title = "Workspace"
 
     def compose(self) -> ComposeResult:
-        yield _RepoList(id="repo-list")
+        yield _RepoGrid(id="repo-list")
         with Vertical(id="add-repo-form"):
             yield Label("Add repo", id="add-repo-heading")
+            yield Label("Repository", classes="field-label")
             yield FuzzyCombobox(
                 placeholder="Repo (type to filter)",
                 id="repo-combo",
             )
+            yield Label("Base branch", classes="field-label")
             yield FuzzyCombobox(
-                placeholder="Base branch",
+                placeholder="Branch to fork from",
                 id="base-branch-combo",
             )
-            yield Input(placeholder="Feature branch", id="feature-branch")
+            yield Label("Feature branch", classes="field-label")
+            yield Input(placeholder="Feature branch name", id="feature-branch")
             yield Button("Add worktree", variant="primary", id="add-btn")
             yield Static("", id="add-repo-status")
 
@@ -118,7 +107,7 @@ class WorkspacePanel(Widget):
     # -- Data in --
 
     def update_repos(self, repos: list[RepoStatus]) -> None:
-        self.query_one("#repo-list", _RepoList).update_repos(repos)
+        self.query_one("#repo-list", _RepoGrid).update_repos(repos)
 
     # -- Form seeding / reactions --
 
@@ -184,7 +173,7 @@ class WorkspacePanel(Widget):
         self, event: FuzzyCombobox.Cancelled,
     ) -> None:
         event.stop()
-        self.query_one("#repo-list", _RepoList).focus()
+        self.query_one("#repo-list", _RepoGrid).focus()
 
     @work(thread=True, exclusive=True, group="workspace-branches")
     def _populate_branches(self, candidate: RepoCandidate) -> None:

@@ -338,6 +338,152 @@ def render_collapsed_pr_line(
     return t
 
 
+def _reviewer_state_display(state: str, icons: Icons) -> tuple[str, str, str]:
+    """Return (icon, color, label) for an individual reviewer's review state."""
+    upper = state.upper()
+    if "APPROVED" in upper:
+        return icons.review_approved, "green", "approved"
+    if "CHANGE" in upper:
+        return icons.review_changes, "red", "changes requested"
+    if "COMMENT" in upper:
+        return icons.review_commented, "blue", "commented"
+    return icons.pr_open, "bright_black", state.lower().replace("_", " ")
+
+
+# Comment bodies are previewed as a single line; anything longer is noise in a
+# list surface — the full thread is one Enter (browser) away.
+_COMMENT_PREVIEW_WIDTH = 100
+# Ticket-slug branch names routinely run to 80+ chars and would wrap the meta
+# line; the leading chars carry all the signal.
+_BRANCH_DISPLAY_WIDTH = 40
+
+
+def _ellipsis(value: str, width: int) -> str:
+    """Truncate `value` to `width` cells with a trailing ellipsis."""
+    return value if len(value) <= width else value[: width - 1] + "…"
+
+
+def _comment_preview(body: str) -> str:
+    """First non-empty line of a comment body, truncated with an ellipsis."""
+    for line in body.strip().splitlines():
+        line = line.strip()
+        if line:
+            return _ellipsis(line, _COMMENT_PREVIEW_WIDTH)
+    return ""
+
+
+def render_pr_card(
+    pr: PullRequest,
+    icons: Icons,
+    *,
+    relative_time_str: str = "",
+    created_time_str: str = "",
+    action_reasons: tuple[str, ...] | list[str] = (),
+) -> Text:
+    """Full-detail card for the ticket-detail PR pane.
+
+        Line 1: {pr} #{number}  {title}
+        Line 2: {repo}  {branch → base}  @{author}              (dim meta)
+        Line 3: {state}  {ci}  {review}  {+adds -dels · files}  {ages}
+        Block:  reviewers, one per line (actual reviews, then requested)
+        Line:   {warning} action reasons
+        Block:  the two most recent comments (header + first body line)
+    """
+    t = Text()
+
+    pr_prefix = f"{icons.pr} " if icons.pr else ""
+    t.append(f"{pr_prefix}#{pr.number}", style="bold")
+    title = strip_leading_ticket(pr.title)
+    if title:
+        t.append(f"  {title}")
+    t.append("\n")
+
+    repo_short = pr.repo.rsplit("/", 1)[-1] if pr.repo else ""
+    branch = _ellipsis(pr.branch, _BRANCH_DISPLAY_WIDTH)
+    if branch and pr.base_branch:
+        branch += f" → {pr.base_branch}"
+    meta_parts = [p for p in (repo_short, branch, f"@{pr.author}" if pr.author else "") if p]
+    if meta_parts:
+        t.append("  ".join(meta_parts), style="dim")
+        t.append("\n")
+
+    state_icon, state_label, state_color = pr_state_display(pr, icons)
+    t.append(f"{state_icon} {state_label}", style=state_color)
+    if pr.ci_status in ("passing", "success"):
+        t.append(f"  {icons.ci_pass} CI", style="green")
+    elif pr.ci_status in ("failing", "failure"):
+        t.append(f"  {icons.ci_fail} CI", style="red")
+    elif pr.ci_status == "pending":
+        t.append(f"  {icons.pr_draft} CI pending", style="yellow")
+    if pr.review_status and pr.review_status != "pending":
+        review_icon, review_color = review_display(pr.review_status, icons)
+        t.append(
+            f"  {review_icon} {pr.review_status.lower().replace('_', ' ')}",
+            style=review_color,
+        )
+    elif pr.reviewers:
+        t.append("  in review", style="blue")
+    if pr.additions or pr.deletions:
+        t.append(f"  +{pr.additions}", style="green")
+        t.append(f" -{pr.deletions}", style="red")
+        if pr.changed_files:
+            plural = "s" if pr.changed_files != 1 else ""
+            t.append(f" · {pr.changed_files} file{plural}", style="dim")
+    if relative_time_str:
+        t.append(f"  · updated {relative_time_str}", style="dim")
+    if created_time_str:
+        t.append(f" · opened {created_time_str}", style="dim")
+    t.append("\n")
+
+    reviewer_lines: list[Text] = []
+    for r in pr.reviewers:
+        icon, color, label = _reviewer_state_display(r.state, icons)
+        line = Text()
+        line.append(f"{icon} ", style=color)
+        line.append(f"@{r.login}")
+        line.append(f" {label}", style=color)
+        reviewer_lines.append(line)
+    for name in [*pr.requested_reviewers, *pr.requested_teams]:
+        reviewer_lines.append(
+            Text(f"{icons.pr_open} @{name} requested", style="bright_black"),
+        )
+    if reviewer_lines:
+        label = "reviewers  "
+        for i, line in enumerate(reviewer_lines):
+            t.append(label if i == 0 else " " * len(label), style="dim")
+            t.append_text(line)
+            t.append("\n")
+
+    if action_reasons:
+        severe = any(r in ("merge conflicts", "CI failing") for r in action_reasons)
+        color = "red" if severe else "yellow"
+        t.append(f"{icons.warning} {', '.join(action_reasons)}", style=color)
+        t.append("\n")
+
+    for c in sorted(pr.comments, key=lambda c: c.created_at)[-2:]:
+        header = f"@{c.author}"
+        rel = format_relative(c.created_at)
+        if rel:
+            header += f" · {rel}"
+        if c.path:
+            loc = c.path.rsplit("/", 1)[-1]
+            if c.line:
+                loc += f":{c.line}"
+            header += f" · {loc}"
+        t.append("┆ ", style="bright_black")
+        t.append(header, style="dim")
+        t.append("\n")
+        preview = _comment_preview(c.body)
+        if preview:
+            t.append("┆ ", style="bright_black")
+            t.append(preview)
+            t.append("\n")
+
+    if t.plain.endswith("\n"):
+        t.right_crop(1)
+    return t
+
+
 def render_pr_row(
     pr: PullRequest,
     icons: Icons,

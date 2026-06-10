@@ -43,7 +43,7 @@ def ticket_detail():
 async def _open_ticket_tab(app, pilot, detail):
     with patch.object(app.data, "load_ticket_detail", return_value=detail):
         app.sessions = detail.sessions
-        app.screen._open_ticket_tab("TEST-1")
+        app.screen._open_ticket("TEST-1")
         await pilot.pause(delay=0.3)
 
 
@@ -71,7 +71,7 @@ async def test_action_launch_agent_opens_modal(
         await pilot.pause()
         await _open_ticket_tab(app, pilot, ticket_detail)
 
-        tab = app.screen.query_one("#ticket-TEST-1 TicketTab", TicketTab)
+        tab = app.screen.query_one("#ticket-detail TicketTab", TicketTab)
         tab.action_launch_agent()
         await pilot.pause(delay=0.2)
 

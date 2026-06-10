@@ -49,6 +49,7 @@ class DuctApp(App):
     BINDINGS = [
         Binding("f", "cycle_filter", "Filter"),
         Binding("a", "next_attention", "Attention"),
+        Binding("ctrl+k", "open_switcher", "Find ticket", priority=True),
         Binding("s", "sync", "Sync"),
         Binding("N", "show_notifications", "Notifications"),
         Binding("question_mark", "show_help", "Help"),
@@ -361,6 +362,14 @@ class DuctApp(App):
     def action_show_notifications(self) -> None:
         from duct_tui.modals.notifications import NotificationsModal
         self.push_screen(NotificationsModal())
+
+    def action_open_switcher(self) -> None:
+        from duct_tui.modals.ticket_switcher import TicketSwitcherModal
+        self.push_screen(TicketSwitcherModal(), callback=self._on_switcher_result)
+
+    def _on_switcher_result(self, key: str | None) -> None:
+        if key and hasattr(self.screen, "_open_ticket"):
+            self.screen._open_ticket(key)
 
     # --- Session preview and docking ---
     #

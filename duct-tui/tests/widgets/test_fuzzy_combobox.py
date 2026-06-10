@@ -1,8 +1,12 @@
-"""Tests for the FuzzyCombobox filter logic."""
+"""Tests for the FuzzyCombobox filter logic and dropdown visibility."""
 
 from __future__ import annotations
 
-from duct_tui.widgets.fuzzy_combobox import _subsequence_match
+import pytest
+from textual.app import App, ComposeResult
+from textual.widgets import Input, OptionList
+
+from duct_tui.widgets.fuzzy_combobox import ComboOption, FuzzyCombobox, _subsequence_match
 
 
 class TestSubsequenceMatch:
@@ -47,7 +51,81 @@ class TestSubsequenceMatch:
 
 class TestComboOption:
     def test_haystack_combines_label_and_secondary(self):
-        from duct_tui.widgets.fuzzy_combobox import ComboOption
         opt = ComboOption(value="aa", label="aa-mocks", secondary="acme/aa-mocks")
         assert "aa-mocks" in opt.haystack
         assert "acme" in opt.haystack
+
+
+class _ComboApp(App):
+    """Combobox next to a plain Input so tests can move focus away."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.selected: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        yield FuzzyCombobox(placeholder="repo", id="combo")
+        yield Input(id="other")
+
+    def on_fuzzy_combobox_selected(self, event: FuzzyCombobox.Selected) -> None:
+        self.selected.append(event.value)
+
+
+_OPTIONS = [
+    ComboOption(value="aa-mocks", label="aa-mocks", secondary="acme/aa-mocks"),
+    ComboOption(value="ice-claims", label="ice-claims"),
+]
+
+
+class TestDropdownVisibility:
+    """The option list behaves like a dropdown: only open while focused."""
+
+    @pytest.mark.asyncio
+    async def test_hidden_until_focused_and_open_while_focused(self):
+        app = _ComboApp()
+        async with app.run_test() as pilot:
+            combo = app.query_one("#combo", FuzzyCombobox)
+            combo.set_options(_OPTIONS)
+            await pilot.pause()
+            assert not combo.query_one(OptionList).display
+
+            combo.focus_input()
+            await pilot.pause()
+            assert combo.query_one(OptionList).display
+
+    @pytest.mark.asyncio
+    async def test_hidden_while_focused_when_nothing_matches(self):
+        app = _ComboApp()
+        async with app.run_test() as pilot:
+            combo = app.query_one("#combo", FuzzyCombobox)
+            combo.set_options(_OPTIONS)
+            combo.focus_input()
+            await pilot.press("x", "y", "z")
+            await pilot.pause()
+            assert not combo.query_one(OptionList).display
+
+    @pytest.mark.asyncio
+    async def test_closes_when_focus_leaves_the_combobox(self):
+        app = _ComboApp()
+        async with app.run_test() as pilot:
+            combo = app.query_one("#combo", FuzzyCombobox)
+            combo.set_options(_OPTIONS)
+            combo.focus_input()
+            await pilot.pause()
+            assert combo.query_one(OptionList).display
+
+            app.query_one("#other", Input).focus()
+            await pilot.pause()
+            assert not combo.query_one(OptionList).display
+
+    @pytest.mark.asyncio
+    async def test_enter_commits_highlighted_option(self):
+        app = _ComboApp()
+        async with app.run_test() as pilot:
+            combo = app.query_one("#combo", FuzzyCombobox)
+            combo.set_options(_OPTIONS)
+            combo.focus_input()
+            await pilot.press("i", "c", "e", "enter")
+            await pilot.pause()
+            assert app.selected == ["ice-claims"]
+            assert combo.value == "ice-claims"

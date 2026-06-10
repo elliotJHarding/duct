@@ -87,7 +87,7 @@ class TicketCardList(VimListMixin, HorizontalScroll):
                 try:
                     card = self.query_one(f"#card-{overview.key}", TicketCard)
                     new_phase = f"phase-{phase_for_category(overview.category)}"
-                    for cls in ("phase-active", "phase-post", "phase-pre"):
+                    for cls in ("phase-active", "phase-post", "phase-pre", "phase-other"):
                         if cls != new_phase:
                             card.remove_class(cls)
                     card.add_class(new_phase)

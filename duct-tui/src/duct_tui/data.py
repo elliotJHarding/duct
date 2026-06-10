@@ -76,6 +76,10 @@ class DataManager:
             _raw_sessions=raw_sessions,
         )
 
+    def load_ticket_index(self, filter_mode: str = "all") -> list[TicketOverview]:
+        """Metadata-only ticket list (no git/sessions/PRs) for the switcher."""
+        return api.get_ticket_index(self.root, filter_mode=filter_mode)
+
     def load_ticket_detail(self, key: str) -> TicketDetail | None:
         return api.get_ticket_detail(self.root, key)
 

@@ -51,6 +51,13 @@ TicketCard.phase-pre:focus {
     border: wide $phase-pre;
 }
 
+TicketCard.phase-other {
+    border: wide $phase-other 40%;
+}
+TicketCard.phase-other:focus {
+    border: wide $phase-other;
+}
+
 /* Tickets assigned to other people sink to the end of the list (sort
    order set in get_ticket_overviews) and get a more muted border so the
    user's own tickets dominate the page. */

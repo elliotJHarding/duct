@@ -35,6 +35,7 @@ def create_duct_theme() -> Theme:
             "phase-active": "#7aa2f7",
             "phase-post": "#e0af68",
             "phase-pre": "#9ece6a",
+            "phase-other": "#737aa2",
             "footer-background": "ansi_default",
             "footer-foreground": "ansi_default",
             "footer-key-foreground": "ansi_magenta",

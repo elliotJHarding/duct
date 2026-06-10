@@ -29,13 +29,13 @@ def ticket_detail(mock_sessions):
 async def _open_ticket_tab(app, pilot, detail):
     with patch.object(app.data, "load_ticket_detail", return_value=detail):
         app.sessions = detail.sessions
-        app.screen._open_ticket_tab("TEST-1")
+        app.screen._open_ticket("TEST-1")
         await pilot.pause(delay=0.3)
 
 
 def _get_summary_pane(app):
     from duct_tui.widgets.ticket_summary_pane import TicketSummaryPane
-    return app.screen.query_one("#ticket-TEST-1 TicketSummaryPane", TicketSummaryPane)
+    return app.screen.query_one("#ticket-detail TicketSummaryPane", TicketSummaryPane)
 
 
 @pytest.mark.asyncio
@@ -172,7 +172,7 @@ async def test_periodic_refresh_does_not_resurrect_preview_on_other_tab(
         # Simulate the 10-second TicketTab refresh while the user is on
         # another tab. _apply_data re-runs through TicketSummaryPane.update_data,
         # which restores the previously-highlighted session row.
-        ticket_tab = app.screen.query_one("#ticket-TEST-1 TicketTab", TicketTab)
+        ticket_tab = app.screen.query_one("#ticket-detail TicketTab", TicketTab)
         ticket_tab._apply_data(ticket_detail)
         await pilot.pause(delay=0.4)
 

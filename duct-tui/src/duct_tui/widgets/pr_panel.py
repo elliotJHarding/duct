@@ -1,14 +1,21 @@
-"""PRPanel -- pull request list with CI status."""
+"""PRPanel -- pull request cards with CI, review and comment detail."""
 
 from __future__ import annotations
+
+import webbrowser
 
 from textual.binding import Binding
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
 from duct.models import PullRequest
+from duct.pr import pr_action_reasons
 from duct_tui.icons import UNICODE, Icons
-from duct_tui.widgets.pr_render import format_relative, render_collapsed_pr_row
+from duct_tui.widgets.pr_render import (
+    format_relative,
+    render_collapsed_pr_row,
+    render_pr_card,
+)
 from duct_tui.widgets.vim_mixin import VimListMixin
 
 
@@ -23,6 +30,7 @@ class PRPanel(VimListMixin, OptionList):
         super().__init__(**kwargs)
         self.border_title = "Pull Requests"
         self._icons: Icons = UNICODE
+        self._prs_by_id: dict[str, PullRequest] = {}
 
     def on_mount(self) -> None:
         self._icons = getattr(self.app, "icons", UNICODE)
@@ -37,33 +45,26 @@ class PRPanel(VimListMixin, OptionList):
 
     def update_prs(self, prs: list[PullRequest]) -> None:
         self.clear_options()
-        # Open PRs keep the multi-line label; done PRs (merged/closed) collapse
-        # to a single aligned line at the bottom.
+        self._prs_by_id = {str(pr.number): pr for pr in prs}
+        # Open PRs render as full cards; done PRs (merged/closed) collapse to a
+        # single aligned line at the bottom.
         open_prs = [pr for pr in prs if pr.state not in ("merged", "closed")]
         done_prs = [pr for pr in prs if pr.state in ("merged", "closed")]
 
         for pr in open_prs:
-            ci = ""
-            if pr.ci_status in ("passing", "success"):
-                ci = " CI:✓"
-            elif pr.ci_status in ("failing", "failure"):
-                ci = " CI:✗"
-            elif pr.ci_status:
-                ci = f" CI:{pr.ci_status}"
-
-            review = ""
-            if pr.review_status:
-                review = f"  {pr.review_status}"
-
-            label = (
-                f"#{pr.number} {pr.title[:40]}\n"
-                f"  {pr.state}{ci}{review}"
+            if self.option_count:
+                self.add_option(None)
+            card = render_pr_card(
+                pr,
+                self._icons,
+                relative_time_str=format_relative(pr.updated_at),
+                created_time_str=format_relative(pr.created_at),
+                action_reasons=tuple(pr_action_reasons(pr)),
             )
-            if pr.reviewers:
-                reviewers_str = ", ".join(f"@{r.login}: {r.state}" for r in pr.reviewers)
-                label += f"\n  {reviewers_str}"
+            self.add_option(Option(card, id=str(pr.number)))
 
-            self.add_option(Option(label, id=str(pr.number)))
+        if open_prs and done_prs:
+            self.add_option(None)
 
         for pr in done_prs:
             self.add_option(Option(
@@ -73,3 +74,17 @@ class PRPanel(VimListMixin, OptionList):
                 ),
                 id=str(pr.number),
             ))
+
+    def on_option_list_option_selected(
+        self, event: OptionList.OptionSelected,
+    ) -> None:
+        pr = self._prs_by_id.get(event.option_id or "")
+        if pr is None:
+            return
+        if not pr.url:
+            self.app.notify("PR has no URL to open.", severity="warning")
+            return
+        try:
+            webbrowser.open(pr.url)
+        except Exception:
+            pass
